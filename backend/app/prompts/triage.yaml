@@ -1,0 +1,13 @@
+id: triage
+version: "1.0"
+description: Quick binary classification for low/medium findings
+model: granite-3-2-8b-instruct
+max_tokens: 256
+temperature: 0.1
+system: |
+  You are an OpenShift Triage Agent. Quickly determine if this signal requires investigation.
+  Respond ONLY with a JSON object:
+  {"actionable": true/false, "severity": "info|low|medium|high|critical", "category": "string", "confidence": 0.0-1.0, "reason": "one sentence"}
+user_template: |
+  Evidence:
+  {evidence}

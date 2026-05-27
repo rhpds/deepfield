@@ -1,38 +1,59 @@
-"""System prompts for specialized reasoning agents."""
+"""System prompts for specialized reasoning agents — loaded from YAML."""
 
-TRIAGE_SYSTEM = """You are an OpenShift Triage Agent. Quickly determine if this signal requires investigation.
-Respond ONLY with a JSON object:
-{"actionable": true/false, "severity": "info|low|medium|high|critical", "category": "string", "confidence": 0.0-1.0, "reason": "one sentence"}"""
+import logging
+import os
+from pathlib import Path
+from typing import Dict
 
-RCA_SYSTEM = """You are an OpenShift Root Cause Analysis Agent. Analyze the provided signals and determine the root cause. Use the specific resource names, error reasons, restart counts, and namespace context from the evidence to give a precise diagnosis — not generic advice.
+logger = logging.getLogger("deepfield.prompts")
 
-Respond ONLY with a JSON object:
-{
-  "root_cause": "specific description referencing actual resource names and error details from evidence",
-  "category": "oom_kill|config_error|image_issue|dependency_failure|resource_exhaustion|network_issue|storage_issue|scheduling_issue|job_failure|unknown",
-  "evidence_chain": ["signal-specific step1", "signal-specific step2"],
-  "confidence": 0.0-1.0,
-  "affected_resources": ["actual resource names from signals"],
-  "remediation": {
-    "priority": "immediate|soon|scheduled",
-    "steps": ["specific action referencing namespace and resource names from evidence"],
-    "commands": ["oc get/describe/logs commands targeting the specific resources"],
-    "risk": "low|medium|high",
-    "note": "any namespace-specific context that affects the fix"
-  }
-}"""
+_prompt_cache: Dict[str, Dict] = {}
+PROMPTS_DIR = str(Path(__file__).parent.parent / "prompts")
 
-INCIDENT_SYSTEM = """You are an OpenShift Incident Agent. Assess the scope and impact of this incident based on correlated findings.
-Respond ONLY with a JSON object:
-{"scope": "single_pod|single_namespace|multi_namespace|cluster_wide|cross_cluster", "affected_services": ["list"], "blast_radius": "description", "priority": "P1|P2|P3|P4", "timeline": ["event1", "event2"]}"""
 
-CORRELATION_SYSTEM = """You are an OpenShift Correlation Agent. Find patterns across multiple signals and namespaces.
-Respond ONLY with a JSON object:
-{"pattern": "description", "common_cause": "description", "affected_namespaces": ["list"], "affected_clusters": ["list"], "confidence": 0.0-1.0, "recommendation": "string"}"""
+def load_prompt(name: str) -> Dict:
+    """Load a versioned prompt from prompts/{name}.yaml (same pattern as StarGate)."""
+    if name in _prompt_cache:
+        return _prompt_cache[name]
+    try:
+        import yaml
+        path = os.path.join(PROMPTS_DIR, f"{name}.yaml")
+        if not os.path.exists(path):
+            logger.warning(f"Prompt file not found: {path}")
+            return {}
+        with open(path) as f:
+            prompt = yaml.safe_load(f)
+        _prompt_cache[name] = prompt
+        logger.info(f"Loaded prompt '{name}' v{prompt.get('version', '?')}")
+        return prompt
+    except Exception as e:
+        logger.warning(f"Failed to load prompt '{name}': {e}")
+        return {}
 
-REMEDIATION_SYSTEM = """You are an OpenShift Remediation Agent. Suggest specific fix steps. You must NEVER execute commands — only suggest.
-Respond ONLY with a JSON object:
-{"action": "description", "steps": ["step1", "step2"], "commands": ["oc command 1", "oc command 2"], "risk": "low|medium|high", "reversible": true/false, "warning": "any caveats"}"""
+
+def get_system_prompt(name: str) -> str:
+    """Get the system prompt text for a named prompt."""
+    prompt = load_prompt(name)
+    return prompt.get("system", "")
+
+
+def get_prompt_version(name: str) -> str:
+    """Get the version of a named prompt."""
+    prompt = load_prompt(name)
+    return prompt.get("version", "unknown")
+
+
+# Backward-compatible constants — load from YAML at import time
+def _load_system(name: str, fallback: str) -> str:
+    prompt = load_prompt(name)
+    return prompt.get("system", fallback)
+
+
+TRIAGE_SYSTEM = _load_system("triage", 'You are an OpenShift Triage Agent. Respond with JSON only.')
+RCA_SYSTEM = _load_system("rca", 'You are an OpenShift Root Cause Analysis Agent. Respond with JSON only.')
+INCIDENT_SYSTEM = _load_system("incident", 'You are an OpenShift Incident Agent. Respond with JSON only.')
+CORRELATION_SYSTEM = _load_system("correlation", 'You are an OpenShift Correlation Agent. Respond with JSON only.')
+REMEDIATION_SYSTEM = _load_system("remediation", 'You are an OpenShift Remediation Agent. Respond with JSON only.')
 
 
 def format_evidence(evidence) -> str:

@@ -1,0 +1,13 @@
+id: correlation
+version: "1.0"
+description: Cross-cluster pattern detection across multiple findings
+model: granite-3-2-8b-instruct
+max_tokens: 800
+temperature: 0.2
+system: |
+  You are an OpenShift Correlation Agent. Find patterns across multiple signals and namespaces.
+  Respond ONLY with a JSON object:
+  {"pattern": "description", "common_cause": "description", "affected_namespaces": ["list"], "affected_clusters": ["list"], "confidence": 0.0-1.0, "recommendation": "string"}
+user_template: |
+  Evidence:
+  {evidence}
