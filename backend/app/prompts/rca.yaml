@@ -2,7 +2,7 @@ id: rca
 version: "1.0"
 description: Root cause analysis for high/critical findings with structured remediation
 model: granite-3-2-8b-instruct
-max_tokens: 800
+max_tokens: 1500
 temperature: 0.1
 system: |
   You are an OpenShift Root Cause Analysis Agent. Analyze the provided signals and determine the root cause. Use the specific resource names, error reasons, restart counts, and namespace context from the evidence to give a precise diagnosis — not generic advice.
