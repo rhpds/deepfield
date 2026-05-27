@@ -295,6 +295,7 @@ class StreamingSession:
                         "filter": d.filter_name, "signal_id": str(d.signal_id)[:8],
                         "reason": d.reason_code, "evidence": d.evidence,
                     })
+                    self._push_escalation(d)
 
             # Correlate
             findings = correlate(kept) if len(kept) >= 2 else []
@@ -424,6 +425,25 @@ class StreamingSession:
                 self._do_inference(task, model)
             else:
                 self._stop.wait(1.0)
+
+    def _push_escalation(self, decision):
+        """Push escalated findings to StarGate and Launchpad (non-blocking, fire-and-forget)."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                if decision.filter_name == "LaunchpadSessionAgent" and decision.reason_code == "lab_failed":
+                    from app.integrations.event_publisher import suggest_remediation
+                    session_id = decision.evidence.get("resource_name", "")
+                    if session_id:
+                        asyncio.ensure_future(suggest_remediation(
+                            session_id=session_id,
+                            action="reset",
+                            reason=f"DeepField detected lab failure: {decision.reason_code}",
+                            evidence=decision.evidence,
+                        ))
+        except Exception:
+            pass
 
     def _log_event(self, tier: str, action: str, data: dict):
         from datetime import datetime, timezone
