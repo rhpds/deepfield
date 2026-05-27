@@ -1,0 +1,8 @@
+---
+# Development environment — minimal resources
+deepfield_replicas: 1
+deepfield_cpu_request: "250m"
+deepfield_memory_limit: "512Mi"
+postgres_storage_size: "1Gi"
+scan_interval: 60
+deploy_chaos: true

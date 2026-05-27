@@ -1,0 +1,26 @@
+---
+# Sample variables — copy and fill in for your environment
+guid: "demo01"
+
+# LiteLLM inference proxy (required)
+litellm_api_base: "https://your-litellm-proxy.example.com"
+litellm_api_key: "sk-your-api-key"
+
+# Cluster to monitor (required for live monitoring)
+cluster_1_name: "my-cluster"
+cluster_1_api_url: "https://api.my-cluster.example.com:6443"
+cluster_1_token: "REPLACE-WITH-SA-TOKEN"
+cluster_1_include_ns: "my-app-*,production"
+cluster_1_exclude_ns: "openshift-*,kube-*"
+cluster_1_allow_remediation: "true"
+
+# Optional second cluster
+cluster_2_name: "inference-cluster"
+cluster_2_api_url: "https://api.inference-cluster.example.com:6443"
+cluster_2_token: "REPLACE-WITH-SA-TOKEN"
+
+# Optional Prometheus/Thanos for GPU metrics
+thanos_url: "https://thanos-querier.your-monitoring-cluster.example.com"
+
+# Chaos workloads for demo
+deploy_chaos: true

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: deepfield
+  labels:
+    app: deepfield
+    purpose: fleet-signal-intelligence

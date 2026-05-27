@@ -1,0 +1,3 @@
+transient_window_seconds: 120
+dedupe_window_seconds: 60
+severity_escalation_threshold: high

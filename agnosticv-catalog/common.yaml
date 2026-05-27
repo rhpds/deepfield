@@ -1,0 +1,56 @@
+---
+# AgnosticV Catalog Entry — DeepField
+# Fleet-scale OpenShift signal intelligence on Intel Xeon 6 / Gaudi 3
+#
+# Register in shared agnosticv repo — coordinate with Ashok/Tony.
+
+__meta__:
+  catalog:
+    display_name: "DeepField — Fleet Signal Intelligence"
+    description: >
+      Fleet-scale OpenShift signal intelligence and inference benchmarking.
+      Deterministic nano-agent filters compress massive K8s telemetry so only
+      a tiny fraction requires expensive LLM reasoning on Intel Gaudi 3.
+      Proves one inference cluster can monitor hundreds of OpenShift clusters.
+    category: Labs
+    keywords:
+      - intel
+      - deepfield
+      - gaudi
+      - xeon
+      - signal-intelligence
+      - fleet-monitoring
+    labels:
+      Provider: RHDP
+
+  deployer:
+    scm_url: https://github.com/agnosticd/agnosticd-v2
+    scm_ref: main
+    execution_environment:
+      image: quay.io/agnosticd/ee-multicloud:latest
+      pull: missing
+    actions:
+      destroy:
+        disable: false
+      start:
+        disable: false
+      stop:
+        disable: false
+
+env_type: deepfield-signal-intelligence
+agnosticd_open_environment: false
+cloud_provider: none
+
+# Container images
+deepfield_image: "quay.io/intel-redhat/deepfield:latest"
+postgres_image: "registry.redhat.io/rhel9/postgresql-16:latest"
+
+# Inference — all through LiteLLM/MAAS
+litellm_api_base: ""
+
+# Database
+deploy_database: true
+postgres_storage_size: "10Gi"
+
+# Monitoring
+scan_interval: 30

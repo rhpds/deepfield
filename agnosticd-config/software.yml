@@ -1,0 +1,241 @@
+---
+# Stage 2: Deploy DeepField to OpenShift
+- name: "DeepField — Deploy"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    postgres_password: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+    database_url: "postgresql://{{ postgres_user }}:{{ postgres_password }}@deepfield-postgres.{{ ocp_project_name }}.svc:5432/deepfield"
+
+  tasks:
+    # ─── Namespace ───
+    - name: Create DeepField namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ ocp_project_name }}"
+            labels:
+              app.kubernetes.io/part-of: deepfield
+              guid: "{{ guid }}"
+
+    # ─── Secrets ───
+    - name: Create DeepField secrets
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: deepfield-secrets
+            namespace: "{{ ocp_project_name }}"
+          type: Opaque
+          stringData:
+            POSTGRES_USER: "{{ postgres_user }}"
+            POSTGRES_PASSWORD: "{{ postgres_password }}"
+            DATABASE_URL: "{{ database_url }}"
+            LITELLM_API_BASE: "{{ litellm_api_base }}"
+            LITELLM_API_KEY: "{{ litellm_api_key }}"
+            CLUSTER_1_NAME: "{{ cluster_1_name }}"
+            CLUSTER_1_API_URL: "{{ cluster_1_api_url }}"
+            CLUSTER_1_TOKEN: "{{ cluster_1_token }}"
+            CLUSTER_1_INCLUDE_NS: "{{ cluster_1_include_ns }}"
+            CLUSTER_1_EXCLUDE_NS: "{{ cluster_1_exclude_ns }}"
+            CLUSTER_1_ALLOW_REMEDIATION: "{{ cluster_1_allow_remediation }}"
+            CLUSTER_2_NAME: "{{ cluster_2_name }}"
+            CLUSTER_2_API_URL: "{{ cluster_2_api_url }}"
+            CLUSTER_2_TOKEN: "{{ cluster_2_token }}"
+            THANOS_URL: "{{ thanos_url }}"
+
+    # ─── PostgreSQL ───
+    - name: Create PostgreSQL PVC
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: deepfield-postgres-data
+            namespace: "{{ ocp_project_name }}"
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: "{{ postgres_storage_size }}"
+      when: deploy_database | bool
+
+    - name: Deploy PostgreSQL
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: deepfield-postgres
+            namespace: "{{ ocp_project_name }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: deepfield-postgres
+            template:
+              metadata:
+                labels:
+                  app: deepfield-postgres
+              spec:
+                containers:
+                  - name: postgres
+                    image: "{{ postgres_image }}"
+                    env:
+                      - name: POSTGRESQL_USER
+                        valueFrom:
+                          secretKeyRef:
+                            name: deepfield-secrets
+                            key: POSTGRES_USER
+                      - name: POSTGRESQL_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: deepfield-secrets
+                            key: POSTGRES_PASSWORD
+                      - name: POSTGRESQL_DATABASE
+                        value: deepfield
+                    ports:
+                      - containerPort: 5432
+                    volumeMounts:
+                      - name: data
+                        mountPath: /var/lib/pgsql/data
+                    resources:
+                      requests:
+                        cpu: 250m
+                        memory: 512Mi
+                      limits:
+                        cpu: "1"
+                        memory: 1Gi
+                volumes:
+                  - name: data
+                    persistentVolumeClaim:
+                      claimName: deepfield-postgres-data
+      when: deploy_database | bool
+
+    - name: Create PostgreSQL service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: deepfield-postgres
+            namespace: "{{ ocp_project_name }}"
+          spec:
+            selector:
+              app: deepfield-postgres
+            ports:
+              - port: 5432
+      when: deploy_database | bool
+
+    # ─── DeepField Backend ───
+    - name: Deploy DeepField backend
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: deepfield-backend
+            namespace: "{{ ocp_project_name }}"
+          spec:
+            replicas: "{{ deepfield_replicas }}"
+            selector:
+              matchLabels:
+                app: deepfield
+            template:
+              metadata:
+                labels:
+                  app: deepfield
+              spec:
+                containers:
+                  - name: backend
+                    image: "{{ deepfield_image }}"
+                    ports:
+                      - containerPort: 8099
+                    envFrom:
+                      - secretRef:
+                          name: deepfield-secrets
+                    resources:
+                      requests:
+                        cpu: "{{ deepfield_cpu_request }}"
+                        memory: 512Mi
+                      limits:
+                        cpu: "2"
+                        memory: "{{ deepfield_memory_limit }}"
+                    readinessProbe:
+                      httpGet:
+                        path: /health
+                        port: 8099
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
+                    livenessProbe:
+                      httpGet:
+                        path: /health
+                        port: 8099
+                      initialDelaySeconds: 15
+                      periodSeconds: 30
+
+    - name: Create DeepField service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: deepfield-backend
+            namespace: "{{ ocp_project_name }}"
+          spec:
+            selector:
+              app: deepfield
+            ports:
+              - port: 8099
+                targetPort: 8099
+
+    - name: Create DeepField route
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: route.openshift.io/v1
+          kind: Route
+          metadata:
+            name: deepfield
+            namespace: "{{ ocp_project_name }}"
+          spec:
+            to:
+              kind: Service
+              name: deepfield-backend
+            port:
+              targetPort: 8099
+            tls:
+              termination: edge
+              insecureEdgeTerminationPolicy: Redirect
+
+    # ─── Chaos Workloads (optional) ───
+    - name: Create chaos namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ chaos_project_name }}"
+            labels:
+              app.kubernetes.io/part-of: deepfield
+              guid: "{{ guid }}"
+      when: deploy_chaos | bool
+
+    - name: Deploy chaos workloads
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/files/chaos-expanded.yaml"
+        namespace: "{{ chaos_project_name }}"
+      when: deploy_chaos | bool

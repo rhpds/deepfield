@@ -1,0 +1,7 @@
+name: medium
+clusters: 25
+namespaces_per_cluster: 40
+pods_per_namespace: 20
+total_events: 250000
+failure_rate: 0.02
+description: Medium fleet for benchmarking filter performance

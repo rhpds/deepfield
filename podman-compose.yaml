@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: deepfield
+      POSTGRES_USER: deepfield
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass123}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deepfield"]
+      interval: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "8099:8099"
+    environment:
+      DATABASE_URL: postgresql://deepfield:${POSTGRES_PASSWORD:-changeme}@postgres:5432/deepfield
+      LITELLM_API_BASE: ${LITELLM_API_BASE:-}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      CLUSTER_1_NAME: ${CLUSTER_1_NAME:-}
+      CLUSTER_1_API_URL: ${CLUSTER_1_API_URL:-}
+      CLUSTER_1_TOKEN: ${CLUSTER_1_TOKEN:-}
+      CLUSTER_1_INCLUDE_NS: ${CLUSTER_1_INCLUDE_NS:-*}
+      CLUSTER_1_EXCLUDE_NS: ${CLUSTER_1_EXCLUDE_NS:-openshift-*,kube-*}
+      CLUSTER_1_ALLOW_REMEDIATION: ${CLUSTER_1_ALLOW_REMEDIATION:-true}
+      THANOS_URL: ${THANOS_URL:-}
+      SSL_VERIFY: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

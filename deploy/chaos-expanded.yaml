@@ -1,0 +1,232 @@
+---
+# === OOM Kill pods — exit code 137, generates OOMKilled events ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oom-killer
+  namespace: deepfield-chaos
+  labels:
+    app: oom-killer
+    chaos-type: oom
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: oom-killer
+  template:
+    metadata:
+      labels:
+        app: oom-killer
+        chaos-type: oom
+    spec:
+      containers:
+      - name: oom
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sh", "-c", "echo 'Allocating memory...'; dd if=/dev/zero of=/dev/null bs=1G count=100"]
+        resources:
+          limits:
+            memory: "32Mi"
+          requests:
+            memory: "16Mi"
+---
+# === Config error pods — bad command, generates Error/CrashLoopBackOff ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-error-app
+  namespace: deepfield-chaos
+  labels:
+    app: config-error-app
+    chaos-type: config-error
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: config-error-app
+  template:
+    metadata:
+      labels:
+        app: config-error-app
+        chaos-type: config-error
+    spec:
+      containers:
+      - name: broken
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sh", "-c", "echo 'Missing required env var DB_HOST'; exit 1"]
+        env:
+        - name: APP_NAME
+          value: "config-error-demo"
+---
+# === Failing jobs — generates BackoffLimitExceeded events continuously ===
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: failing-etl-job
+  namespace: deepfield-chaos
+  labels:
+    app: failing-etl-job
+    chaos-type: job-failure
+spec:
+  schedule: "*/3 * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: failing-etl-job
+            chaos-type: job-failure
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: etl
+            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+            command: ["sh", "-c", "echo 'ETL: connecting to source...'; sleep 2; echo 'ERROR: connection refused'; exit 1"]
+---
+# === Bad image with different tag — generates ErrImagePull/ImagePullBackOff ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wrong-registry-app
+  namespace: deepfield-chaos
+  labels:
+    app: wrong-registry-app
+    chaos-type: image-issue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wrong-registry-app
+  template:
+    metadata:
+      labels:
+        app: wrong-registry-app
+        chaos-type: image-issue
+    spec:
+      containers:
+      - name: app
+        image: internal-registry.corp.example.com/team/service:v3.2.1
+---
+# === Resource-hungry pod — can't schedule, generates FailedScheduling ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-hungry-app
+  namespace: deepfield-chaos
+  labels:
+    app: resource-hungry-app
+    chaos-type: scheduling
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: resource-hungry-app
+  template:
+    metadata:
+      labels:
+        app: resource-hungry-app
+        chaos-type: scheduling
+    spec:
+      containers:
+      - name: hungry
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "64"
+            memory: "512Gi"
+---
+# === Dependency failure pod — crashes because dependency is missing ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dependency-fail-app
+  namespace: deepfield-chaos
+  labels:
+    app: dependency-fail-app
+    chaos-type: dependency-failure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dependency-fail-app
+  template:
+    metadata:
+      labels:
+        app: dependency-fail-app
+        chaos-type: dependency-failure
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sh", "-c", "echo 'Checking dependency redis:6379...'; sleep 1; echo 'FATAL: redis connection refused'; exit 1"]
+---
+# === Volume mount failure — PVC that doesn't exist ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: volume-fail-app
+  namespace: deepfield-chaos
+  labels:
+    app: volume-fail-app
+    chaos-type: storage-issue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: volume-fail-app
+  template:
+    metadata:
+      labels:
+        app: volume-fail-app
+        chaos-type: storage-issue
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sleep", "infinity"]
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: nonexistent-pvc-data
+---
+# === Periodic health check failures — generates Unhealthy events ===
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unhealthy-app
+  namespace: deepfield-chaos
+  labels:
+    app: unhealthy-app
+    chaos-type: health-check
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: unhealthy-app
+  template:
+    metadata:
+      labels:
+        app: unhealthy-app
+        chaos-type: health-check
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sh", "-c", "sleep infinity"]
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "exit 1"]
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 2
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "exit 1"]
+          initialDelaySeconds: 3
+          periodSeconds: 5

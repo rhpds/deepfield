@@ -1,0 +1,7 @@
+name: small
+clusters: 5
+namespaces_per_cluster: 20
+pods_per_namespace: 10
+total_events: 10000
+failure_rate: 0.02
+description: Small fleet for integration testing

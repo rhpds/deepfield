@@ -1,0 +1,45 @@
+---
+# DeepField — default variables for agnosticd deployment
+
+env_type: deepfield-signal-intelligence
+guid: "{{ guid }}"
+ocp_project_name: "deepfield-{{ guid }}"
+chaos_project_name: "deepfield-chaos-{{ guid }}"
+
+# Container images
+deepfield_image: "quay.io/intel-redhat/deepfield:latest"
+postgres_image: "registry.redhat.io/rhel9/postgresql-16:latest"
+
+# Replicas & resources
+deepfield_replicas: 1
+deepfield_cpu_request: "500m"
+deepfield_memory_limit: "1Gi"
+
+# Database
+deploy_database: true
+postgres_user: deepfield
+postgres_storage_size: "10Gi"
+
+# Inference (LiteLLM/MAAS)
+litellm_api_base: ""
+litellm_api_key: ""
+
+# Cluster monitoring (read-only)
+cluster_1_name: ""
+cluster_1_api_url: ""
+cluster_1_token: ""
+cluster_1_include_ns: "*"
+cluster_1_exclude_ns: "openshift-*,kube-*"
+cluster_1_allow_remediation: "true"
+
+# Optional second cluster
+cluster_2_name: ""
+cluster_2_api_url: ""
+cluster_2_token: ""
+
+# Monitoring
+thanos_url: ""
+scan_interval: 30
+
+# Chaos workloads for testing
+deploy_chaos: false

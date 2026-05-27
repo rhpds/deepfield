@@ -1,0 +1,59 @@
+---
+# Stage 3: Health checks and access info
+- name: "DeepField — Post-deploy verification"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Wait for PostgreSQL
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: deepfield-postgres
+        namespace: "{{ ocp_project_name }}"
+      register: pg_deploy
+      until: pg_deploy.resources[0].status.readyReplicas | default(0) >= 1
+      retries: 12
+      delay: 10
+      when: deploy_database | bool
+
+    - name: Wait for DeepField backend
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: deepfield-backend
+        namespace: "{{ ocp_project_name }}"
+      register: df_deploy
+      until: df_deploy.resources[0].status.readyReplicas | default(0) >= 1
+      retries: 12
+      delay: 10
+
+    - name: Get route URL
+      command: >
+        oc get route deepfield -n {{ ocp_project_name }}
+        -o jsonpath='{.spec.host}'
+      register: route_host
+      changed_when: false
+
+    - name: Health check
+      uri:
+        url: "https://{{ route_host.stdout }}/health"
+        validate_certs: false
+      register: health
+      retries: 5
+      delay: 10
+      until: health.status == 200
+
+    - name: Print access information
+      debug:
+        msg: |
+          =========================================
+          DeepField deployed successfully!
+
+          URL:    https://{{ route_host.stdout }}
+          Health: https://{{ route_host.stdout }}/health
+          API:    https://{{ route_host.stdout }}/api/v1/
+
+          Tabs: Demo | Simulator | Live Monitoring | Agents | LLM | Benchmarks
+
+          Live monitoring auto-starts on pod startup.
+          =========================================

@@ -1,0 +1,32 @@
+---
+# Stage 1: Validate prerequisites
+- name: "DeepField — Pre-flight checks"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Verify oc CLI available
+      command: oc version --client
+      changed_when: false
+
+    - name: Verify cluster connectivity
+      command: oc whoami
+      changed_when: false
+
+    - name: Verify required variables
+      assert:
+        that:
+          - guid is defined
+          - litellm_api_base != ""
+          - litellm_api_key != ""
+        fail_msg: "Required variables not set: guid, litellm_api_base, litellm_api_key"
+
+    - name: Verify cluster monitoring config (if monitoring enabled)
+      assert:
+        that:
+          - cluster_1_name != ""
+          - cluster_1_api_url != ""
+          - cluster_1_token != ""
+        fail_msg: "Cluster monitoring requires CLUSTER_1_NAME, CLUSTER_1_API_URL, CLUSTER_1_TOKEN"
+      when: cluster_1_name != ""

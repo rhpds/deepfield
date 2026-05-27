@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: deepfield
+  namespace: deepfield
+  labels:
+    app: deepfield
+spec:
+  to:
+    kind: Service
+    name: deepfield-backend
+  port:
+    targetPort: 8099
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

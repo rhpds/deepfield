@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepfield-postgres
+  namespace: deepfield
+  labels:
+    app: deepfield
+    component: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deepfield
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: deepfield
+        component: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: postgres
+          image: registry.redhat.io/rhel9/postgresql-16:latest
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: deepfield-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: deepfield-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRESQL_DATABASE
+              value: deepfield
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "deepfield"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: deepfield-postgres-data

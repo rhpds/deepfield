@@ -1,0 +1,26 @@
+---
+# Teardown — delete namespaces (cascades to all resources)
+- name: "DeepField — Destroy"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Delete chaos namespace
+      kubernetes.core.k8s:
+        state: absent
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ chaos_project_name }}"
+      ignore_errors: true
+
+    - name: Delete DeepField namespace
+      kubernetes.core.k8s:
+        state: absent
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ ocp_project_name }}"

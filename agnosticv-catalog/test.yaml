@@ -1,0 +1,8 @@
+---
+# Test/event environment
+deepfield_replicas: 1
+deepfield_cpu_request: "500m"
+deepfield_memory_limit: "1Gi"
+postgres_storage_size: "5Gi"
+scan_interval: 30
+deploy_chaos: true

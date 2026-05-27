@@ -1,0 +1,26 @@
+drop:
+  - severity: info
+    condition: no_escalation
+  - outcome: suppress
+  - outcome: dedupe
+
+keep:
+  - severity: high
+  - severity: critical
+  - signal_type: launchpad_lab_failed
+  - signal_type: kserve_not_ready
+
+correlate:
+  strategies:
+    - namespace_within_window
+    - same_cluster_failure_type
+    - cross_cluster_same_failure
+
+escalate_to_small_model:
+  - severity: medium
+  - finding_type: namespace_correlation
+
+escalate_to_large_model:
+  - severity: critical
+  - finding_type: cross_cluster_correlation
+  - signal_count_threshold: 5

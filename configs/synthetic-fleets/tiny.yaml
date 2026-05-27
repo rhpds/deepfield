@@ -1,0 +1,7 @@
+name: tiny
+clusters: 1
+namespaces_per_cluster: 10
+pods_per_namespace: 10
+total_events: 1000
+failure_rate: 0.02
+description: Minimal profile for unit tests and quick validation

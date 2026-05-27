@@ -1,0 +1,8 @@
+---
+# Production environment
+deepfield_replicas: 1
+deepfield_cpu_request: "1"
+deepfield_memory_limit: "2Gi"
+postgres_storage_size: "50Gi"
+scan_interval: 30
+deploy_chaos: false

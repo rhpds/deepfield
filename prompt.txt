@@ -1,0 +1,1456 @@
+You are building a new separate application inside the Red Hat demo/platform environment.
+
+Application name:
+DeepField
+
+Purpose:
+DeepField is a fleet-scale OpenShift signal intelligence and inference benchmarking platform.
+
+It proves a repeatable Red Hat + Intel platform pattern:
+
+Deterministic filters compress massive multi-cluster telemetry into a small number of high-value inference tasks, then measure how much fleet one Intel Xeon/Gaudi inference cluster can monitor.
+
+The killer proof:
+One inference cluster can monitor N OpenShift clusters because only X% of raw signals require expensive reasoning.
+
+DeepField must also include a synthetic client/load generator that can benchmark the available inference cluster across models, routes, and workload profiles.
+
+This is NOT StarGate.
+This is NOT Launchpad.
+This is NOT ARE.
+This is NOT a governance demo.
+This is NOT an autonomous remediation system.
+
+DeepField is the signal intelligence and benchmark layer:
+- generate synthetic fleet telemetry
+- collect live demo platform cluster telemetry read-only
+- normalize signals
+- filter cheaply
+- deduplicate
+- correlate
+- route only high-value findings to inference
+- benchmark model endpoints under staged load
+- measure compression ratio
+- measure inference capacity
+- estimate how much fleet one inference cluster can monitor
+
+Primary principle:
+Filter cheap. Reason expensive.
+
+Secondary principle:
+Benchmark with repeatability, not vibes.
+
+Current available hardware context:
+- Access to a large Intel Xeon 6 / Gaudi 3 cluster
+- Approximately 2000 Xeon 6 CPUs
+- Approximately 10.5 TB memory
+- Available model endpoints include:
+  - DeepSeek-R1-Distill-Qwen-14B on Gaudi 3, 4 HPUs
+  - Microsoft Phi-4 on Gaudi 3, 2 HPUs
+  - Qwen3-14B with 2 replicas, each on Gaudi 3, 4 HPUs
+  - Llama 3.1 70B Q4 GGUF on Xeon 6767P CPU
+- There may be live Red Hat demo platform clusters available for read-only monitoring.
+- The platform should support both synthetic fleet testing and live demo platform cluster monitoring.
+- The synthetic client should also support benchmark runs against the actual inference endpoints.
+
+Build this in stages.
+Use TDD.
+Use red/green gates.
+Do not build the whole universe in one pass.
+
+------------------------------------------------------------
+PRODUCT SUMMARY
+------------------------------------------------------------
+
+DeepField is a fleet signal intelligence system for OpenShift and a repeatable benchmarking harness for the Intel/Red Hat inference cluster.
+
+It answers:
+
+1. How many clusters can one inference cluster monitor?
+2. How many raw signals can we process per minute?
+3. How much telemetry can deterministic filters discard or compress?
+4. What percentage of signals require LLM reasoning?
+5. Which model lane is best for which reasoning task?
+6. What are the latency, throughput, and cost characteristics?
+7. What is the reasoning compression ratio?
+8. Where does the system saturate first?
+9. How much inference capacity exists across the available Xeon/Gaudi endpoints?
+10. Which model endpoint handles which workload best?
+11. How does throughput change as concurrency ramps?
+12. What is the max stable load before latency or error rate degrades?
+
+The product must support three modes:
+
+1. Synthetic Fleet Mode
+   Generates simulated OpenShift cluster telemetry at controlled scale.
+
+2. Live Fleet Mode
+   Reads from real demo platform OpenShift clusters using read-only access.
+
+3. Inference Benchmark Mode
+   Uses the synthetic client to generate repeatable reasoning, summary, RCA, and fleet-analysis workloads against the inference cluster.
+
+The MVP must work in Synthetic Fleet Mode and Mock Inference Mode first.
+Benchmark mode should support mock endpoints first, then real endpoint adapters.
+Live Fleet Mode should be adapter-based and read-only.
+
+------------------------------------------------------------
+CORE DEMO CLAIM
+------------------------------------------------------------
+
+DeepField should produce a measurable report like:
+
+“Using deterministic nano-agent filters, DeepField processed 10,000,000 raw signals, reduced them to 12,000 correlated findings, and routed only 600 high-value reasoning tasks to LLMs.
+
+Reasoning Compression Ratio: 16,666:1
+
+Under this workload, one Intel Xeon/Gaudi inference cluster could monitor an estimated N OpenShift clusters while keeping p95 finding latency under S seconds.
+
+The synthetic benchmark client also measured inference capacity across DeepSeek, Phi-4, Qwen3, and Llama 70B lanes, showing model-specific saturation points, p95 latency, tokens/sec, and stable concurrency.”
+
+Do not hardcode these numbers.
+Build the system to measure them.
+
+------------------------------------------------------------
+HIGH-LEVEL ARCHITECTURE
+------------------------------------------------------------
+
+Synthetic or Live Cluster Sources
+  ↓
+Signal Collectors
+  - synthetic generator
+  - OpenShift read-only collector
+  - Launchpad session collector, later
+  - StarGate collector, later
+  ↓
+Signal Normalizer
+  - converts raw cluster events/resources into common signal schema
+  ↓
+Nano-Agent Filter Layer
+  - deterministic filters
+  - cheap classification
+  - dedupe
+  - known transient suppression
+  - severity tagging
+  ↓
+Signal Router
+  - drop
+  - keep
+  - enrich
+  - correlate
+  - route to small model
+  - route to large model
+  ↓
+Correlation Engine
+  - namespace/session correlation
+  - same app/resource correlation
+  - same cluster correlation
+  - cross-cluster correlation
+  ↓
+Inference Router
+  - Phi-4 for fast utility summaries
+  - Qwen3 for general synthesis
+  - DeepSeek for reasoning-heavy RCA
+  - Llama 70B Xeon for CPU fallback / critic / baseline
+  ↓
+Reasoning Workers
+  - finding summarizer
+  - RCA synthesizer
+  - fleet summary generator
+  - capacity estimator
+  ↓
+Synthetic Benchmark Client
+  - token cannon
+  - reasoning gauntlet
+  - model race
+  - saturation curve
+  - sustained load
+  ↓
+Metrics + Reports
+  - signal funnel
+  - reasoning compression ratio
+  - cluster coverage estimate
+  - model throughput
+  - model latency
+  - saturation point
+  - cost/showback estimate
+
+------------------------------------------------------------
+CORE CONCEPTS
+------------------------------------------------------------
+
+Raw Signal:
+A low-level event or state observation from a cluster.
+
+Examples:
+- pod phase
+- pod restart
+- event warning
+- route health
+- PVC pending
+- node pressure
+- namespace quota
+- VM state
+- model endpoint health
+- Kafka lag
+- KServe endpoint readiness
+- Launchpad session status, later
+
+Normalized Signal:
+A common representation of raw signals across clusters.
+
+Candidate Finding:
+A correlated group of signals that may be worth reasoning over.
+
+Reasoning Task:
+An expensive inference request generated from a candidate finding.
+
+Final Insight:
+A summarized finding that humans can act on or review.
+
+Synthetic Benchmark Request:
+A repeatable artificial inference request generated to benchmark model endpoints.
+
+Benchmark Run:
+A staged load test across one or more inference endpoints.
+
+Inference Capacity:
+The measured throughput/latency/error envelope of a model endpoint or model route.
+
+Fleet Capacity Projection:
+An estimate of how many clusters/namespaces/signals one inference cluster can monitor under defined latency and throughput targets.
+
+------------------------------------------------------------
+CORE METRICS
+------------------------------------------------------------
+
+DeepField must measure these:
+
+Signal Volume:
+- raw_signals_received
+- normalized_signals
+- dropped_signals
+- deduped_signals
+- suppressed_transients
+- retained_signals
+- correlated_findings
+- reasoning_tasks_created
+- final_insights_created
+
+Compression:
+- signal_reduction_percent
+- llm_escalation_rate_percent
+- reasoning_compression_ratio
+  formula: raw_signals_received / reasoning_tasks_created
+
+Latency:
+- collection_latency_ms
+- normalization_latency_ms
+- filter_latency_ms
+- correlation_latency_ms
+- reasoning_latency_ms
+- end_to_end_latency_ms
+- p50/p95/p99 for each
+
+Throughput:
+- raw_signals_per_second
+- normalized_signals_per_second
+- findings_per_second
+- reasoning_tasks_per_second
+- final_insights_per_second
+
+Model Metrics:
+- model_name
+- route
+- hardware_lane
+- requests
+- successes
+- failures
+- tokens_in
+- tokens_out
+- tokens_per_second
+- requests_per_second
+- p50_latency_ms
+- p95_latency_ms
+- p99_latency_ms
+- queue_depth
+- timeout_count
+- retry_count
+- saturation_point
+
+Benchmark Metrics:
+- benchmark_run_id
+- workload_profile
+- model_profile
+- concurrency_level
+- request_count
+- duration_seconds
+- successful_requests
+- failed_requests
+- timeout_count
+- tokens_in
+- tokens_out
+- tokens_per_second
+- requests_per_second
+- p50_latency_ms
+- p95_latency_ms
+- p99_latency_ms
+- error_rate
+- stable: true | false
+
+Fleet Coverage:
+- clusters_monitored
+- namespaces_monitored
+- pods_monitored
+- routes_monitored
+- pvcs_monitored
+- model_endpoints_monitored
+- events_per_minute
+- scan_cycle_duration_seconds
+- projected_clusters_supported
+
+Resource Usage:
+- CPU used
+- memory used
+- HPU usage if available
+- queue depth
+- worker count
+- model endpoint utilization, if available
+
+Cost/Showback Estimate:
+- estimated_tokens
+- estimated_model_calls
+- estimated_reasoning_cost_units
+- cost_per_cluster_estimate
+- cost_per_finding_estimate
+
+------------------------------------------------------------
+KEY PRODUCT KPIs
+------------------------------------------------------------
+
+Add these first-class KPIs:
+
+1. Reasoning Compression Ratio
+
+Definition:
+raw_signals_received / reasoning_tasks_created
+
+Example:
+1,000,000 raw signals / 500 reasoning tasks = 2,000:1
+
+2. LLM Escalation Rate
+
+Definition:
+reasoning_tasks_created / raw_signals_received
+
+Example:
+500 / 1,000,000 = 0.05%
+
+3. Stable Model Throughput
+
+Definition:
+Highest concurrency level where:
+- p95 latency remains under configured target
+- error rate remains below configured target
+- timeout rate remains below configured target
+
+4. Projected Fleet Coverage
+
+Definition:
+max_raw_signals_supported_per_minute / average_raw_signals_per_cluster_per_minute
+
+Where:
+max_raw_signals_supported_per_minute =
+max_reasoning_tasks_per_minute * reasoning_compression_ratio
+
+5. Cost Per Finding
+
+Definition:
+estimated_reasoning_cost_units / final_insights_created
+
+These should be shown prominently in reports and dashboard.
+
+------------------------------------------------------------
+APPLICATION MODULES
+------------------------------------------------------------
+
+Suggested repo structure:
+
+deepfield/
+  README.md
+  Makefile
+  docker-compose.yml
+  pyproject.toml
+
+  backend/
+    app/
+      api/
+      domain/
+      collectors/
+      generators/
+      benchmark/
+      normalizers/
+      nanoagents/
+      routing/
+      correlation/
+      inference/
+      metrics/
+      reports/
+      storage/
+      adapters/
+      tests/
+
+  frontend/
+    src/
+      components/
+      pages/
+      api/
+      charts/
+      tests/
+
+  configs/
+    signal-routing/
+    nanoagents/
+    inference-routing/
+    benchmark-profiles/
+    synthetic-fleets/
+
+  fixtures/
+    synthetic/
+    openshift/
+    benchmark/
+    reports/
+
+  docs/
+    architecture.md
+    signal-schema.md
+    nano-agent-pattern.md
+    synthetic-fleet-mode.md
+    live-fleet-mode.md
+    inference-benchmark-mode.md
+    metrics.md
+    capacity-model.md
+    red-hat-intel-demo.md
+
+Recommended stack:
+- Backend: Python FastAPI
+- Data models: Pydantic
+- Storage: PostgreSQL
+- Async workers: Python asyncio first
+- Frontend: React + TypeScript + Vite + Tailwind, optional after backend/reporting
+- Charts: Recharts or similar
+- Tests: pytest, Vitest if frontend included
+- Local dev: Docker Compose
+
+Keep it simple first.
+
+------------------------------------------------------------
+DOMAIN MODELS
+------------------------------------------------------------
+
+Implement these models first.
+
+1. ClusterRef
+
+Fields:
+- cluster_id
+- display_name
+- environment: synthetic | live
+- source_type: synthetic | openshift | launchpad | stargate
+- api_url optional
+- status
+- metadata
+
+2. RawSignal
+
+Fields:
+- signal_id
+- cluster_id
+- namespace
+- resource_kind
+- resource_name
+- source
+- signal_type
+- raw_payload
+- timestamp
+
+3. NormalizedSignal
+
+Fields:
+- signal_id
+- cluster_id
+- namespace
+- resource_kind
+- resource_name
+- signal_type
+- severity: info | low | medium | high | critical
+- confidence
+- deterministic: bool
+- labels
+- evidence
+- timestamp
+
+4. FilterDecision
+
+Fields:
+- decision_id
+- signal_id
+- filter_name
+- outcome: keep | drop | suppress | dedupe | enrich | escalate
+- reason_code
+- evidence
+- timestamp
+
+5. CandidateFinding
+
+Fields:
+- finding_id
+- clusters
+- namespaces
+- signal_ids
+- finding_type
+- severity
+- correlation_keys
+- summary
+- evidence
+- created_at
+
+6. ReasoningTask
+
+Fields:
+- task_id
+- finding_id
+- task_type:
+  - summarize_finding
+  - root_cause_analysis
+  - cross_cluster_correlation
+  - fleet_summary
+  - capacity_estimate
+- model_preference:
+  - phi4
+  - qwen3
+  - deepseek
+  - llama70b
+  - auto
+- route
+- prompt
+- context
+- status
+- metrics
+- created_at
+- completed_at
+
+7. InferenceResult
+
+Fields:
+- result_id
+- task_id
+- model_name
+- hardware_lane
+- status
+- output
+- tokens_in
+- tokens_out
+- latency_ms
+- error optional
+- timestamp
+
+8. FinalInsight
+
+Fields:
+- insight_id
+- finding_id
+- task_ids
+- title
+- severity
+- summary
+- affected_clusters
+- affected_namespaces
+- evidence
+- model_results
+- created_at
+
+9. DeepFieldRun
+
+Fields:
+- run_id
+- mode: synthetic | live | benchmark
+- profile
+- started_at
+- completed_at
+- status
+- config
+- metrics_summary
+- report_refs
+
+10. CapacityProjection
+
+Fields:
+- run_id
+- clusters_monitored
+- raw_signals_per_second
+- reasoning_tasks_per_second
+- p95_latency_ms
+- cpu_usage
+- memory_usage
+- hpu_usage optional
+- projected_clusters_supported
+- assumptions
+
+11. BenchmarkRequest
+
+Fields:
+- request_id
+- benchmark_run_id
+- workload_profile
+- task_type
+- prompt
+- input_tokens_estimate
+- expected_output_tokens
+- model_preference
+- created_at
+- metadata
+
+12. BenchmarkRun
+
+Fields:
+- benchmark_run_id
+- profile
+- model_profiles
+- concurrency_levels
+- request_count
+- duration_seconds
+- status
+- started_at
+- completed_at
+- metrics_summary
+- report_refs
+
+13. BenchmarkResult
+
+Fields:
+- result_id
+- benchmark_run_id
+- request_id
+- model_name
+- hardware_lane
+- concurrency_level
+- status
+- latency_ms
+- ttft_ms optional
+- tokens_in
+- tokens_out
+- tokens_per_second
+- error optional
+- timestamp
+
+------------------------------------------------------------
+SYNTHETIC FLEET MODE
+------------------------------------------------------------
+
+Build Synthetic Fleet Mode first.
+
+It should generate realistic OpenShift-like telemetry.
+
+Synthetic profiles:
+
+1. tiny
+- 1 cluster
+- 10 namespaces
+- 100 pods
+- 1,000 events
+
+2. small
+- 5 clusters
+- 100 namespaces
+- 1,000 pods
+- 10,000 events
+
+3. medium
+- 25 clusters
+- 1,000 namespaces
+- 20,000 pods
+- 250,000 events
+
+4. large
+- 100 clusters
+- 5,000 namespaces
+- 100,000 pods
+- 1,000,000 events
+
+5. max_q
+- configurable clusters
+- configurable namespaces
+- configurable pods
+- configurable events/sec
+- configurable failure rate
+- configurable seed
+
+Signal types to generate:
+- pod_running
+- pod_pending
+- pod_crashloop
+- pod_imagepullbackoff
+- route_ready
+- route_unhealthy
+- pvc_bound
+- pvc_pending
+- node_ready
+- node_pressure
+- namespace_quota_ok
+- namespace_quota_exceeded
+- vm_running
+- vm_failed
+- kserve_ready
+- kserve_not_ready
+- kafka_lag_normal
+- kafka_lag_high
+- launchpad_lab_active
+- launchpad_lab_failed
+- launchpad_lab_expired
+
+Failure scenarios:
+- single_namespace_failure
+- route_no_endpoints
+- pvc_storage_delay
+- node_pressure_cascade
+- model_endpoint_slow
+- kafka_backpressure
+- quota_exceeded
+- cross_cluster_model_latency
+- launchpad_lab_validation_failure
+
+The synthetic generator must be deterministic by seed.
+
+------------------------------------------------------------
+INFERENCE BENCHMARK MODE
+------------------------------------------------------------
+
+Build Inference Benchmark Mode alongside Synthetic Fleet Mode.
+
+Purpose:
+Use the synthetic client to benchmark the actual inference cluster across available model endpoints.
+
+This mode should answer:
+- Which model handles which task best?
+- What is the stable concurrency level per model?
+- What is the saturation point per model?
+- What is p95 latency per concurrency step?
+- What is tokens/sec per model?
+- What is the error/timeout profile?
+- How many reasoning tasks per minute can the inference cluster sustain?
+- How many clusters does that imply DeepField can monitor?
+
+Benchmark workload profiles:
+
+1. endpoint_sanity
+- 1 to 10 requests per endpoint
+- verifies every endpoint responds
+
+2. model_race
+- same prompt set across all models
+- compares latency, success, tokens/sec
+
+3. token_cannon
+- output-heavy generation workload
+- measures output tokens/sec
+
+4. reasoning_gauntlet
+- RCA, troubleshooting, multi-step reasoning
+- routes to DeepSeek/Qwen/Llama
+
+5. fleet_summary
+- synthetic cluster findings summarized into fleet reports
+- routes to Qwen/Phi/Llama
+
+6. sustained_overdrive
+- 30 to 60 minute mixed workload
+- ramps concurrency over time
+
+7. saturation_curve
+- runs each model at concurrency levels:
+  1, 2, 4, 8, 16, 32, 64, 128
+- stop early on configured error threshold
+
+Benchmark task types:
+- fast_summary
+- general_summary
+- root_cause_analysis
+- cross_cluster_correlation
+- fleet_summary
+- structured_json_output
+- critic_or_baseline
+- token_generation
+
+Benchmark outputs:
+- benchmark_run_report.json
+- benchmark_run_report.md
+- model_comparison.csv
+- saturation_curve.csv
+- raw_benchmark_results.jsonl
+
+All benchmark runs must be repeatable by seed.
+
+Real endpoint benchmarking should be adapter-based.
+Mock benchmarking must work first.
+
+------------------------------------------------------------
+LIVE FLEET MODE
+------------------------------------------------------------
+
+Add adapter interfaces for live monitoring.
+
+MVP should include read-only collector stubs and fixture-based tests.
+
+Future OpenShift collector should read:
+
+- oc get nodes -o json
+- oc get namespaces -o json
+- oc get pods -A -o json
+- oc get events -A -o json
+- oc get routes -A -o json
+- oc get pvc -A -o json
+- oc get vm,vmi -A -o json where available
+- oc get inferenceservices -A -o json where available
+- oc get servingruntimes -A -o json where available
+
+Rules:
+- live mode must be read-only
+- no cluster mutation
+- no remediation
+- no delete/update/patch
+- no secrets values collected
+- only metadata about secrets if absolutely necessary
+
+Live mode should support:
+- cluster list config
+- kubeconfig context or service account token
+- namespace include/exclude filters
+- label selectors for Launchpad sessions
+- scan interval
+- timeout
+- error handling
+
+------------------------------------------------------------
+NANO-AGENT FILTER LAYER
+------------------------------------------------------------
+
+Implement deterministic nano-agents.
+
+Nano-agents are tiny filters. They do not call LLMs.
+
+Initial nano-agents:
+
+1. PodHealthAgent
+- detects crashloops, pending pods, image pull failures
+
+2. RouteHealthAgent
+- detects routes with no endpoints or unhealthy status
+
+3. PVCHealthAgent
+- detects PVC pending or stuck
+
+4. NodePressureAgent
+- detects memory/cpu/disk pressure signals
+
+5. NamespaceQuotaAgent
+- detects quota exceeded or near limit
+
+6. KServeEndpointAgent
+- detects model endpoint not ready
+
+7. KafkaLagAgent
+- detects high lag, if signals exist
+
+8. LaunchpadSessionAgent
+- detects active/failed/expired lab sessions, if signals exist
+
+9. TransientSuppressorAgent
+- suppresses known short-lived startup/provisioning transients
+
+10. DedupeAgent
+- deduplicates identical signals within a configurable time window
+
+Each nano-agent must:
+- accept NormalizedSignal list or stream
+- return FilterDecision list
+- be deterministic
+- be fast
+- be unit tested
+
+------------------------------------------------------------
+SIGNAL ROUTING POLICY
+------------------------------------------------------------
+
+Add configurable routing policy.
+
+Example outcomes:
+- drop
+- suppress
+- keep
+- enrich
+- correlate
+- small_model
+- large_model
+
+Small model route:
+Use for low/medium complexity summaries/classification.
+
+Large model route:
+Use for high-severity, multi-signal, multi-cluster, or reasoning-heavy findings.
+
+Initial routing rules:
+
+Drop:
+- info signals with no failure
+- duplicate signals
+- known transients under configured threshold
+
+Keep:
+- high severity single-resource failure
+- active Launchpad lab failure
+- model endpoint issue
+
+Correlate:
+- same namespace within time window
+- same app label within time window
+- same node within time window
+- same model endpoint
+- same cluster and failure type
+- cross-cluster same failure type
+
+Small model:
+- namespace summary
+- low/medium severity finding summary
+- known failure class explanation
+
+Large model:
+- multi-cluster correlation
+- high severity finding
+- model endpoint degradation
+- cross-cluster capacity pressure
+- ambiguous failure requiring reasoning
+
+------------------------------------------------------------
+INFERENCE ROUTING
+------------------------------------------------------------
+
+Add inference routing abstraction.
+
+Use current available model lane names as config, not hardcoded.
+
+Model profiles:
+
+1. deepseek_r1_distill_qwen_14b_gaudi
+- hardware: gaudi3
+- hpus: 4
+- best_for:
+  - reasoning
+  - root cause analysis
+  - multi-step synthesis
+
+2. phi4_gaudi
+- hardware: gaudi3
+- hpus: 2
+- best_for:
+  - fast summaries
+  - utility reasoning
+  - concise output
+
+3. qwen3_14b_gaudi_a
+- hardware: gaudi3
+- hpus: 4
+- best_for:
+  - general generation
+  - fleet summaries
+  - structured output
+
+4. qwen3_14b_gaudi_b
+- hardware: gaudi3
+- hpus: 4
+- best_for:
+  - general generation
+  - load balancing
+  - structured output
+
+5. llama_3_1_70b_q4_xeon
+- hardware: xeon6
+- best_for:
+  - CPU fallback
+  - large-model baseline
+  - critic/evaluator
+  - long-form summary if latency acceptable
+
+Routes:
+- fast_summary → phi4_gaudi
+- general_summary → qwen3_14b
+- deep_reasoning → deepseek_r1_distill_qwen_14b
+- critic_or_baseline → llama_3_1_70b_q4_xeon
+- fallback → qwen3 or llama depending availability
+
+MVP can use MockInferenceClient first.
+Real inference clients should be adapter-based.
+
+------------------------------------------------------------
+INFERENCE METRICS NEEDED TO ANSWER THE BIG QUESTION
+------------------------------------------------------------
+
+DeepField must collect enough metrics to answer:
+
+“How much fleet can one inference cluster monitor?”
+
+Required inference metrics:
+
+Per model:
+- requests_received
+- requests_completed
+- requests_failed
+- tokens_in
+- tokens_out
+- total_latency_ms
+- p50_latency_ms
+- p95_latency_ms
+- p99_latency_ms
+- tokens_per_second
+- requests_per_second
+- queue_depth
+- timeout_count
+- retry_count
+
+Per reasoning task:
+- task_type
+- finding_id
+- model_selected
+- context_size
+- tokens_in
+- tokens_out
+- latency_ms
+- success/failure
+- output_validity
+
+Per benchmark:
+- concurrency level
+- stable or unstable
+- saturation point
+- error threshold reached
+- timeout threshold reached
+- max stable throughput
+- max stable tokens/sec
+
+Per run:
+- total_reasoning_tasks
+- total_tokens_in
+- total_tokens_out
+- average_reasoning_latency
+- p95_reasoning_latency
+- reasoning_tasks_per_cluster
+- reasoning_tasks_per_1000_signals
+
+Fleet capacity estimate:
+- max_reasoning_tasks_per_minute under p95 latency target
+- raw signals per reasoning task
+- projected raw signals supported per minute
+- projected clusters supported based on synthetic signal rate per cluster
+
+Formula:
+projected_clusters_supported =
+  max_raw_signals_supported_per_minute / average_raw_signals_per_cluster_per_minute
+
+Where:
+max_raw_signals_supported_per_minute =
+  max_reasoning_tasks_per_minute * reasoning_compression_ratio
+
+------------------------------------------------------------
+REPORTS
+------------------------------------------------------------
+
+Generate these reports:
+
+1. deepfield_run_report.json
+2. deepfield_run_report.md
+3. signal_funnel_report.json
+4. model_metrics_report.json
+5. capacity_projection_report.md
+6. benchmark_run_report.json
+7. benchmark_run_report.md
+8. saturation_curve.csv
+9. model_comparison.csv
+10. raw_benchmark_results.jsonl
+11. live_cluster_scan_report.md, when live mode is used
+
+Markdown report sections:
+
+# DeepField Run Report
+
+## Run Summary
+- Mode:
+- Profile:
+- Clusters simulated/monitored:
+- Namespaces:
+- Raw signals:
+- Duration:
+
+## Signal Funnel
+- Raw signals:
+- Normalized signals:
+- Dropped:
+- Deduped:
+- Suppressed transients:
+- Correlated findings:
+- Reasoning tasks:
+- Final insights:
+
+## Compression
+- Signal reduction:
+- LLM escalation rate:
+- Reasoning compression ratio:
+
+## Inference Metrics
+- Model usage:
+- Tokens/sec:
+- p95 reasoning latency:
+- Error rate:
+
+## Benchmark Metrics
+- Benchmark profile:
+- Models tested:
+- Stable throughput:
+- Saturation point:
+- Best model by task type:
+- p95 latency by model:
+
+## Capacity Projection
+- Estimated raw signals supported/min:
+- Estimated clusters supported:
+- Assumptions:
+- Saturation point observed:
+
+## Top Findings
+- finding id
+- severity
+- summary
+- affected clusters/namespaces
+- model used
+
+## Notes
+- Synthetic metrics are labeled as synthetic.
+- Benchmark metrics are labeled as mock or real.
+- Live metrics are labeled as live.
+- No cluster mutation was performed.
+
+------------------------------------------------------------
+DASHBOARD
+------------------------------------------------------------
+
+Create a dashboard if frontend is included in this phase.
+
+Required visual:
+
+DeepField Signal Funnel:
+
+Raw Signals → Normalized → Filtered → Correlated Findings → Reasoning Tasks → Final Insights
+
+Display:
+- clusters monitored
+- raw signals/sec
+- reasoning compression ratio
+- LLM escalation rate
+- projected clusters supported
+- p95 reasoning latency
+- model lane utilization
+- top findings
+- live/synthetic/benchmark mode badge
+
+Benchmark panel:
+- active benchmark profile
+- model comparison
+- concurrency step
+- tokens/sec
+- requests/sec
+- p95 latency
+- error rate
+- stable/unstable status
+- saturation point
+
+A big hero metric:
+
+“One inference cluster currently projects to monitor N clusters under p95 target S seconds.”
+
+Use simulated value if synthetic mode.
+Use measured value if benchmark mode plus synthetic capacity mode are available.
+Label all assumptions clearly.
+
+------------------------------------------------------------
+TDD RED/GREEN MATRIX
+------------------------------------------------------------
+
+Build with TDD.
+
+| Build Stage | Red Condition | Green Condition | Evidence |
+|---|---|---|---|
+| Domain Models | invalid signals accepted | valid/invalid models tested | unit tests |
+| Synthetic Generator | nonrepeatable synthetic data | seeded generation deterministic | unit tests |
+| Benchmark Client Models | invalid benchmark requests accepted | benchmark models validated | unit tests |
+| Benchmark Generator | benchmark data not repeatable | seeded benchmark workload generated | unit tests |
+| Normalizer | raw signals not normalized | normalized schema produced | unit tests |
+| Nano Agents | filters missing or nondeterministic | deterministic filter decisions | unit tests |
+| Dedupe/Suppression | duplicates pass through | duplicates/transients reduced | unit tests |
+| Correlation Engine | no findings created | related signals become findings | unit tests |
+| Signal Routing | everything goes to LLM | only eligible findings create tasks | unit tests |
+| Mock Inference | no model metrics | deterministic inference metrics generated | unit tests |
+| Benchmark Runner | cannot run model race | benchmark produces model metrics | integration tests |
+| Saturation Curve | no concurrency ramp | saturation curve generated | integration tests |
+| Capacity Projection | no coverage estimate | projected cluster capacity computed | unit tests |
+| Reports | no artifacts | JSON/Markdown/CSV reports generated | snapshot tests |
+| Live Collector Stub | live path unsafe | read-only interface only | unit tests |
+| E2E Synthetic Tiny | no complete flow | tiny profile completes | integration test |
+| E2E Benchmark Model Race | no complete benchmark | model race completes | integration test |
+| E2E Synthetic + Benchmark Capacity | no combined proof | capacity projection uses benchmark and signal compression | integration test |
+
+Graduation rule:
+Do not move to the next stage while required tests are red.
+
+------------------------------------------------------------
+TESTS TO ADD
+------------------------------------------------------------
+
+Add tests for:
+
+1. raw_signal_model_accepts_valid_signal
+2. normalized_signal_rejects_missing_cluster_id
+3. synthetic_generator_is_deterministic_by_seed
+4. synthetic_tiny_profile_generates_expected_counts
+5. synthetic_failure_scenarios_generate_failures
+6. benchmark_request_model_accepts_valid_request
+7. benchmark_run_model_accepts_model_race
+8. benchmark_generator_is_deterministic_by_seed
+9. endpoint_sanity_profile_generates_expected_requests
+10. model_race_profile_generates_same_prompts_for_all_models
+11. token_cannon_profile_generates_output_heavy_requests
+12. reasoning_gauntlet_profile_generates_reasoning_tasks
+13. saturation_curve_profile_generates_concurrency_steps
+14. normalizer_converts_pod_crashloop_to_normalized_signal
+15. pod_health_agent_detects_crashloop
+16. route_health_agent_detects_no_endpoints
+17. pvc_health_agent_detects_pending
+18. node_pressure_agent_detects_pressure
+19. namespace_quota_agent_detects_exceeded
+20. kserve_agent_detects_not_ready
+21. dedupe_agent_removes_duplicate_signals
+22. transient_suppressor_suppresses_short_startup_noise
+23. signal_router_drops_info_noise
+24. signal_router_escalates_high_severity
+25. correlation_engine_groups_same_namespace_signals
+26. correlation_engine_groups_cross_cluster_model_latency
+27. reasoning_task_created_for_high_value_finding
+28. reasoning_task_not_created_for_dropped_signal
+29. mock_inference_client_returns_deterministic_metrics
+30. model_router_selects_deepseek_for_reasoning
+31. model_router_selects_phi4_for_fast_summary
+32. model_router_selects_qwen_for_general_summary
+33. model_router_selects_llama_for_cpu_baseline
+34. benchmark_runner_records_latency_and_tokens
+35. benchmark_runner_computes_model_comparison
+36. benchmark_runner_detects_saturation_point
+37. capacity_projection_computes_reasoning_compression_ratio
+38. capacity_projection_computes_projected_clusters_supported
+39. capacity_projection_uses_benchmark_max_reasoning_throughput
+40. report_writer_outputs_deepfield_run_report
+41. report_writer_outputs_capacity_projection
+42. report_writer_outputs_benchmark_run_report
+43. report_writer_outputs_saturation_curve_csv
+44. e2e_synthetic_tiny_completes
+45. e2e_benchmark_model_race_completes
+46. e2e_synthetic_plus_benchmark_capacity_projection_completes
+
+------------------------------------------------------------
+CLI COMMANDS
+------------------------------------------------------------
+
+Add CLI commands:
+
+Synthetic fleet:
+
+deepfield generate-synthetic \
+  --profile tiny \
+  --seed 42
+
+deepfield run-synthetic \
+  --profile tiny \
+  --seed 42
+
+deepfield run-synthetic \
+  --profile medium \
+  --seed 42
+
+deepfield run-synthetic \
+  --profile max_q \
+  --clusters 100 \
+  --namespaces 5000 \
+  --events-per-minute 100000 \
+  --failure-rate 0.02 \
+  --seed 42
+
+Benchmark:
+
+deepfield benchmark \
+  --profile endpoint_sanity \
+  --mode mock \
+  --seed 42
+
+deepfield benchmark \
+  --profile model_race \
+  --mode mock \
+  --models deepseek,phi4,qwen3a,qwen3b,llama70b \
+  --seed 42
+
+deepfield benchmark \
+  --profile saturation_curve \
+  --mode mock \
+  --models deepseek,phi4,qwen3a,qwen3b,llama70b \
+  --concurrency-levels 1,2,4,8,16,32,64,128 \
+  --seed 42
+
+deepfield benchmark \
+  --profile sustained_overdrive \
+  --mode mock \
+  --duration-minutes 30 \
+  --seed 42
+
+Capacity:
+
+deepfield capacity-report \
+  --synthetic-run-id <run_id> \
+  --benchmark-run-id <benchmark_run_id>
+
+Live:
+
+deepfield scan-live \
+  --config configs/live/clusters.yaml \
+  --read-only \
+  --limit-namespaces launchpad-*
+
+Reports:
+
+deepfield report \
+  --run-id <run_id>
+
+deepfield benchmark-report \
+  --benchmark-run-id <benchmark_run_id>
+
+deepfield build-report
+
+------------------------------------------------------------
+IMPLEMENTATION ORDER
+------------------------------------------------------------
+
+Use TDD.
+
+Phase 1: Domain + synthetic generator
+1. Add domain models.
+2. Add tests.
+3. Implement synthetic generator.
+4. Prove deterministic profiles.
+
+Phase 2: Benchmark client foundation
+1. Add benchmark models.
+2. Add benchmark workload generator.
+3. Add endpoint_sanity, model_race, token_cannon, reasoning_gauntlet, saturation_curve profiles.
+4. Add MockInferenceClient benchmark execution.
+5. Produce benchmark metrics.
+
+Phase 3: Normalization + nano-agents
+1. Add normalizer.
+2. Add initial nano-agents.
+3. Add dedupe and transient suppression.
+4. Measure filter reduction.
+
+Phase 4: Correlation + routing
+1. Add correlation engine.
+2. Add signal routing policy.
+3. Create candidate findings.
+4. Create reasoning tasks only for eligible findings.
+
+Phase 5: Inference routing + model metrics
+1. Add model profiles.
+2. Add inference router.
+3. Route tasks to model profiles.
+4. Generate deterministic inference metrics.
+
+Phase 6: Reports + capacity projection
+1. Compute signal funnel metrics.
+2. Compute reasoning compression ratio.
+3. Use benchmark max stable throughput to compute projected clusters supported.
+4. Generate reports.
+
+Phase 7: Live collector read-only stub
+1. Add live collector interface.
+2. Add fixture-based OpenShift collector tests.
+3. Implement read-only commands only.
+4. Do not mutate cluster.
+
+Phase 8: Dashboard, optional
+1. Signal funnel view.
+2. Capacity projection hero metric.
+3. Benchmark panel.
+4. Model metrics panel.
+5. Top findings table.
+
+------------------------------------------------------------
+ACCEPTANCE CRITERIA FOR MVP
+------------------------------------------------------------
+
+MVP is complete when:
+
+1. Synthetic tiny/small/medium profiles run end-to-end.
+2. Benchmark endpoint_sanity and model_race profiles run end-to-end in mock mode.
+3. Saturation curve benchmark generates concurrency-step metrics in mock mode.
+4. Raw signals are normalized.
+5. Nano-agents filter/dedupe/suppress signals deterministically.
+6. Candidate findings are created through correlation.
+7. Only a small subset of findings create reasoning tasks.
+8. Mock inference metrics are generated per model route.
+9. Reasoning Compression Ratio is computed.
+10. Benchmark max stable throughput is computed.
+11. Projected clusters supported is computed using both signal compression and benchmark throughput.
+12. Markdown/JSON/CSV reports are generated.
+13. Live collector interface exists and is read-only.
+14. No cluster mutation exists.
+15. Tests are green.
+16. Reports clearly label synthetic vs live vs mock benchmark vs real benchmark.
+17. The system can answer:
+    - raw signals processed
+    - percent filtered
+    - reasoning tasks created
+    - compression ratio
+    - model throughput
+    - saturation point
+    - estimated clusters supported
+
+------------------------------------------------------------
+FINAL OUTPUT
+------------------------------------------------------------
+
+At completion of current phase, provide:
+
+1. Files changed
+2. Tests added
+3. Commands to run
+4. Example synthetic run
+5. Example benchmark run
+6. Example DeepField run report
+7. Example signal funnel report
+8. Example benchmark report
+9. Example capacity projection report
+10. Current red/green matrix
+11. What remains intentionally out of scope
+12. Recommended next phase
+
+Remember:
+The demo is only powerful if it produces numbers.
+
+The key proof is:
+One inference cluster can monitor N clusters because deterministic filtering compresses the fleet telemetry so only X% requires expensive reasoning.
+
+The benchmark client is how we measure the inference side of that proof:
+how many reasoning tasks per minute the Xeon/Gaudi inference cluster can actually sustain under stable latency and error thresholds.

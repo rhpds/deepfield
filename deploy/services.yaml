@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepfield-backend
+  namespace: deepfield
+  labels:
+    app: deepfield
+    component: backend
+spec:
+  selector:
+    app: deepfield
+    component: backend
+  ports:
+    - port: 8099
+      targetPort: 8099
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepfield-postgres
+  namespace: deepfield
+  labels:
+    app: deepfield
+    component: postgres
+spec:
+  selector:
+    app: deepfield
+    component: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
