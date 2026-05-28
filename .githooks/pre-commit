@@ -1,0 +1,45 @@
+#!/bin/bash
+# Pre-commit hook: block commits containing secrets, tokens, or internal URLs
+
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Get staged file contents directly (not diffs)
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$FILES" ]; then
+    exit 0
+fi
+
+FAILED=0
+
+check_pattern() {
+    local label="$1"
+    local pattern="$2"
+    for f in $FILES; do
+        matches=$(git show ":$f" 2>/dev/null | grep -n "$pattern" || true)
+        if [ -n "$matches" ]; then
+            echo -e "${RED}BLOCKED [$label] in $f:${NC}"
+            echo "$matches" | head -3
+            echo ""
+            FAILED=1
+        fi
+    done
+}
+
+check_pattern "OCP Token"      "sha256~"
+check_pattern "API Key"        "sk-[A-Za-z]"
+check_pattern "JWT Token"      "eyJhbGciOi"
+check_pattern "infra01 URL"    "ocpv-infra0"
+check_pattern "rac-maas URL"   "ocp-rac-maas"
+check_pattern "dal12 domain"   "dal12\.infra\.demo"
+check_pattern "dfw3 domain"    "rs-dfw3\.infra\.demo"
+check_pattern "MAAS domain"    "maas\.redhatworkshops"
+check_pattern "Private Key"    "PRIVATE KEY"
+check_pattern "AWS Key"        "AKIA[A-Z]"
+
+if [ $FAILED -eq 1 ]; then
+    echo -e "${RED}Commit rejected — remove secrets/tokens/internal URLs.${NC}"
+    echo "False positive? Use: git commit --no-verify"
+    exit 1
+fi
