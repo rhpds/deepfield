@@ -24,3 +24,13 @@ pgdata/
 configs/inference-routing/
 .git-old/
 backend/static/
+
+# Secrets and credentials — never commit
+secrets/
+*.kubeconfig
+kubeconfig*
+*.key
+*.pem
+*.token
+*-token
+credentials*
