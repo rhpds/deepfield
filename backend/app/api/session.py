@@ -141,6 +141,37 @@ async def start_session(req: StartSessionRequest):
     return {"session_id": session.session_id, "status": "started", "target_namespaces": req.target_namespaces}
 
 
+@router.post("/signals/inject")
+async def inject_signal(body: dict):
+    """Inject a signal directly into the live session's processing pipeline.
+
+    Used by the platform dashboard to ensure DeepField analyzes a specific
+    failure (e.g., a chaos-injected pod) rather than whatever is loudest.
+    Does NOT affect live monitoring — the signal is added to the queue alongside
+    real signals, not instead of them.
+    """
+    session = get_live_session() or _get_synthetic()
+    if not session:
+        raise HTTPException(status_code=404, detail="No active session")
+
+    from app.domain.models import RawSignal
+    from uuid import uuid4
+    from datetime import datetime, timezone
+    sig = RawSignal(
+        signal_id=uuid4(),
+        cluster_id=uuid4(),
+        source=body.get("source", "injected"),
+        signal_type=body.get("signal_type", "event_backoff"),
+        resource_kind=body.get("resource_kind", "Pod"),
+        resource_name=body.get("resource_name", ""),
+        namespace=body.get("namespace", ""),
+        raw_payload=body.get("evidence", {}),
+        timestamp=datetime.now(timezone.utc),
+    )
+    session._signal_queue.append(sig)
+    return {"injected": True, "queue_depth": len(session._signal_queue)}
+
+
 @router.post("/update")
 async def update_params(req: UpdateParamsRequest):
     session = _get_synthetic()
