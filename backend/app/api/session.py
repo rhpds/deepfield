@@ -91,6 +91,7 @@ class StartSessionRequest(BaseModel):
     routing_mode: str = "production"
     scan_interval: int = 30
     live_clusters: Optional[list] = None
+    target_namespaces: Optional[list] = None
 
 
 class UpdateParamsRequest(BaseModel):
@@ -130,7 +131,14 @@ async def start_session(req: StartSessionRequest):
     )
     session.start()
     _synthetic_session_id = session.session_id
-    return {"session_id": session.session_id, "status": "started"}
+
+    # If target_namespaces specified, filter the live session's signal processing
+    if req.target_namespaces:
+        live = get_live_session()
+        if live:
+            live.target_namespaces = req.target_namespaces
+
+    return {"session_id": session.session_id, "status": "started", "target_namespaces": req.target_namespaces}
 
 
 @router.post("/update")

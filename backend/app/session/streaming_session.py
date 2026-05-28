@@ -54,6 +54,7 @@ class StreamingSession:
         self.cluster_configs = cluster_configs or []
         self.params = SessionParams()
         self.status = "idle"
+        self.target_namespaces: Optional[list] = None
 
         # Signal queue
         self._signal_queue: deque = deque(maxlen=50000)
@@ -253,6 +254,15 @@ class StreamingSession:
             if not buffer:
                 self._stop.wait(0.05)
                 continue
+
+            # Filter by target namespaces if set (for scoped demo sessions)
+            if self.target_namespaces:
+                buffer = [s for s in buffer if any(
+                    getattr(s, 'namespace', '') == ns or getattr(s, 'namespace', '').startswith(ns.rstrip('*'))
+                    for ns in self.target_namespaces
+                )]
+                if not buffer:
+                    continue
 
             # Normalize
             normalized = [normalize_signal(s) for s in buffer]
