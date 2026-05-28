@@ -6,6 +6,7 @@ import importlib
 from app.domain.models import FilterDecision, NormalizedSignal
 
 AGENT_MODULES = [
+    "app.nanoagents.failure_classifier",
     "app.nanoagents.event_classifier",
     "app.nanoagents.pod_health",
     "app.nanoagents.route_health",
