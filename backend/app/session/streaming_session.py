@@ -458,13 +458,21 @@ class StreamingSession:
             if len(self.agent_log) > 50:
                 self.agent_log = self.agent_log[-50:]
 
+    _TASK_TO_PROMPT = {
+        "root_cause_analysis": "rca",
+        "summarize_finding": "triage",
+        "cross_cluster_correlation": "correlation",
+        "fleet_summary": "rca",
+        "incident_analysis": "incident",
+    }
+
     def _do_inference(self, task, model):
         """Execute a single inference call and update metrics."""
         task_type = getattr(task, 'task_type', '')
-        if task_type in ('root_cause_analysis', 'cross_cluster_correlation', 'fleet_summary', 'incident_analysis'):
-            max_tokens = 800
-        else:
-            max_tokens = 256
+        from app.agents.prompts import load_prompt
+        prompt_name = self._TASK_TO_PROMPT.get(task_type, "rca")
+        prompt_config = load_prompt(prompt_name)
+        max_tokens = prompt_config.get("max_tokens", 800)
         resp = self.client.infer(model=model, prompt=task.prompt, max_tokens=max_tokens)
         tier = "micro" if "cpu" in model or "granite" in model or "phi3" in model or "qwen25" in model else "macro"
         with self._lock:
