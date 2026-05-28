@@ -153,6 +153,11 @@ class SignalStore:
     def add_inference(self, inference_dict: dict):
         inference_dict["_ts"] = datetime.now(timezone.utc).isoformat()
         self.recent_inferences.append(inference_dict)
+        try:
+            from app.integrations.kafka_publisher import publish_event
+            publish_event("inference.completed", inference_dict)
+        except Exception:
+            pass
         from app.db import enqueue_write
         enqueue_write("inferences", {
             "model": inference_dict.get("model", ""),
