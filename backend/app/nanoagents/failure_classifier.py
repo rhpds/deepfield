@@ -10,6 +10,8 @@ Fallback: can also load patterns from StarGate's corpus API at
 GET /dashboard/corpus/classes?source=k8s_events
 """
 
+import logging
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from app.domain.models import FilterDecision, NormalizedSignal
+
+logger = logging.getLogger(__name__)
 
 name = "FailureClassifierAgent"
 
@@ -49,11 +53,67 @@ def _load_classes_from_yaml(path: Path = _YAML_PATH) -> Dict[str, Dict[str, Any]
     return compiled
 
 
+def _load_remote_classes() -> Optional[Dict[str, Dict[str, Any]]]:
+    """Load failure classes from StarGate's /api/failure-classes endpoint.
+
+    Requires DEEPFIELD_STARGATE_URL env var. Converts StarGate's class
+    format (raw pattern strings) to DeepField's compiled regex format.
+    Returns None on any error — caller falls back to local YAML.
+    """
+    stargate_url = os.environ.get("DEEPFIELD_STARGATE_URL")
+    if not stargate_url:
+        return None
+
+    try:
+        import urllib.request
+        import json
+
+        url = f"{stargate_url.rstrip('/')}/api/failure-classes"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+
+        remote_classes = data.get("classes", {})
+        compiled = {}
+        for class_name, class_def in remote_classes.items():
+            pattern_str = class_def.get("pattern", "")
+            if not pattern_str:
+                continue
+            try:
+                compiled[class_name] = {
+                    "regex": re.compile(pattern_str, re.IGNORECASE),
+                    "severity": class_def.get("severity", "medium"),
+                    "remediation": class_def.get("remediation", []),
+                    "pattern": pattern_str,
+                }
+            except re.error:
+                continue
+
+        if compiled:
+            logger.info(
+                "Loaded %d failure classes from StarGate at %s",
+                len(compiled), stargate_url,
+            )
+            return compiled
+
+    except Exception as e:
+        logger.warning("Failed to load remote failure classes from StarGate: %s", e)
+
+    return None
+
+
 def _get_compiled_classes() -> Dict[str, Dict[str, Any]]:
-    """Return cached compiled failure classes (lazy singleton)."""
+    """Return cached compiled failure classes (lazy singleton).
+
+    Tries remote StarGate classes first, falls back to local YAML.
+    """
     global _compiled_classes
     if _compiled_classes is None:
-        _compiled_classes = _load_classes_from_yaml()
+        remote = _load_remote_classes()
+        if remote:
+            _compiled_classes = remote
+        else:
+            _compiled_classes = _load_classes_from_yaml()
     return _compiled_classes
 
 

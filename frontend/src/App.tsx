@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink, Outlet } from 'react-router-dom';
 import FleetOverview from './pages/FleetOverview';
 import SignalPipeline from './pages/SignalPipeline';
+import LiveFlow from './pages/LiveFlow';
 import LLMObservatory from './pages/LLMObservatory';
 import ClusterDetail from './pages/ClusterDetail';
 import LivePanel from './pages/LivePanel';
@@ -9,6 +10,7 @@ function AppLayout() {
   const navItems = [
     { to: '/', label: 'Fleet' },
     { to: '/pipeline', label: 'Pipeline' },
+    { to: '/live', label: 'Live Flow' },
     { to: '/llm', label: 'LLM' },
     { to: '/simulator', label: 'Simulator' },
   ];
@@ -65,6 +67,7 @@ export default function App() {
       <Route element={<AppLayout />}>
         <Route path="/" element={<FleetOverview />} />
         <Route path="/pipeline" element={<SignalPipeline />} />
+        <Route path="/live" element={<LiveFlow />} />
         <Route path="/llm" element={<LLMObservatory />} />
         <Route path="/cluster/:id" element={<ClusterDetail />} />
         <Route path="/simulator" element={<LivePanel />} />

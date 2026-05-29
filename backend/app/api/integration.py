@@ -1,5 +1,7 @@
 """Integration events router — receives webhook events from Launchpad and StarGate."""
 
+from __future__ import annotations
+
 import logging
 import os
 from collections import OrderedDict
