@@ -1,9 +1,12 @@
 """Streaming session — continuous signal processing without cycles."""
 
+import logging
 import time
 import threading
 import random
 from collections import deque
+
+logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -239,8 +242,10 @@ class StreamingSession:
     def _process_loop(self):
         """Continuously drains signal queue, normalizes, filters, correlates, routes."""
         buffer = []
+        print("[DEEPFIELD] _process_loop started", flush=True)
 
         while not self._stop.is_set():
+          try:
             # Drain queue
             drained = 0
             while self._signal_queue and drained < 500:
@@ -250,6 +255,20 @@ class StreamingSession:
                     drained += 1
                 except IndexError:
                     break
+
+            # Always tick snapshots even when idle
+            now = time.monotonic()
+            if now - self._last_snapshot >= 2.0:
+                self._take_snapshot()
+                self._last_snapshot = now
+                self._window_start = now
+                self._window_signals = 0
+                self._window_tasks = 0
+                self._window_dropped = 0
+                self._window_findings = 0
+                self._window_latency_sum = 0
+                self._window_tps_sum = 0
+                self._window_inference = 0
 
             if not buffer:
                 self._stop.wait(0.05)
@@ -265,74 +284,87 @@ class StreamingSession:
                     continue
 
             # Normalize
-            normalized = [normalize_signal(s) for s in buffer]
+            try:
+                normalized = [normalize_signal(s) for s in buffer]
+            except Exception as e:
+                print(f"[DEEPFIELD] normalize error: {e}", flush=True)
+                buffer.clear()
+                continue
 
             # Update cluster stats from ALL signals (for infra overview cards)
-            by_cluster: dict = {}
-            for s in buffer:
-                cn = s.source.split(":", 1)[-1] if ":" in s.source else s.source
-                by_cluster.setdefault(cn, []).append(s)
-            for cn, sigs in by_cluster.items():
-                self.store.update_cluster_stats(cn, sigs)
+            try:
+                by_cluster: dict = {}
+                for s in buffer:
+                    cn = s.source.split(":", 1)[-1] if ":" in s.source else s.source
+                    by_cluster.setdefault(cn, []).append(s)
+                for cn, sigs in by_cluster.items():
+                    self.store.update_cluster_stats(cn, sigs)
+            except Exception as e:
+                print(f"[DEEPFIELD] cluster stats error: {e}", flush=True)
 
             # Store only actionable signals (medium/high/critical) — skip info noise
-            for raw, norm in zip(buffer, normalized):
-                if norm.severity in ("info", "low"):
-                    continue
-                cluster_name = raw.source.split(":", 1)[-1] if ":" in raw.source else raw.source
-                self.store.add_signal({
-                    "signal_type": raw.signal_type, "namespace": raw.namespace,
-                    "resource_kind": raw.resource_kind, "resource_name": raw.resource_name,
-                    "source": raw.source, "cluster": cluster_name, "severity": norm.severity,
-                    "raw_payload": raw.raw_payload, "timestamp": raw.timestamp.isoformat(),
-                })
-
-            # Filter — nano agents
-            pipeline_result = run_pipeline(normalized)
-            routing_result = route_signals(normalized, pipeline_result["decisions"])
-            kept = routing_result["kept"]
-            total_dropped = pipeline_result["suppressed_count"] + pipeline_result["deduped_count"] + routing_result["dropped_count"]
-
-            # Store + log nano-agent decisions
-            for d in pipeline_result.get("decisions", []):
-                self.store.add_decision({
-                    "filter_name": d.filter_name, "outcome": d.outcome,
-                    "reason": d.reason_code, "signal_id": str(d.signal_id)[:8],
-                    "evidence": d.evidence,
-                })
-                if d.outcome == "escalate":
-                    self._log_event("nano", "escalate", {
-                        "filter": d.filter_name, "signal_id": str(d.signal_id)[:8],
-                        "reason": d.reason_code, "evidence": d.evidence,
+            try:
+                for raw, norm in zip(buffer, normalized):
+                    if norm.severity in ("info", "low"):
+                        continue
+                    cluster_name = raw.source.split(":", 1)[-1] if ":" in raw.source else raw.source
+                    self.store.add_signal({
+                        "signal_type": raw.signal_type, "namespace": raw.namespace,
+                        "resource_kind": raw.resource_kind, "resource_name": raw.resource_name,
+                        "source": raw.source, "cluster": cluster_name, "severity": norm.severity,
+                        "raw_payload": raw.raw_payload, "timestamp": raw.timestamp.isoformat(),
                     })
-                    self._push_escalation(d)
+            except Exception as e:
+                print(f"[DEEPFIELD] store signal error: {e}", flush=True)
 
-            # Correlate
-            findings = correlate(kept) if len(kept) >= 2 else []
+            # Filter — nano agents, correlate, create tasks
+            try:
+                pipeline_result = run_pipeline(normalized)
+                routing_result = route_signals(normalized, pipeline_result["decisions"])
+                kept = routing_result["kept"]
+                total_dropped = pipeline_result["suppressed_count"] + pipeline_result["deduped_count"] + routing_result["dropped_count"]
 
-            # Store + log findings
-            for f in findings:
-                self.store.add_finding({
-                    "finding_type": f.finding_type, "severity": f.severity,
-                    "summary": f.summary, "namespaces": f.namespaces,
-                    "signal_count": len(f.signal_ids),
-                    "clusters": [str(c)[:8] for c in f.clusters],
-                })
-                self._log_event("correlation", "finding", {
-                    "type": f.finding_type, "severity": f.severity,
-                    "summary": f.summary, "signals": len(f.signal_ids),
-                    "namespaces": f.namespaces[:3],
-                })
+                for d in pipeline_result.get("decisions", []):
+                    self.store.add_decision({
+                        "filter_name": d.filter_name, "outcome": d.outcome,
+                        "reason": d.reason_code, "signal_id": str(d.signal_id)[:8],
+                        "evidence": d.evidence,
+                    })
+                    if d.outcome == "escalate":
+                        self._log_event("nano", "escalate", {
+                            "filter": d.filter_name, "signal_id": str(d.signal_id)[:8],
+                            "reason": d.reason_code, "evidence": d.evidence,
+                        })
+                        self._push_escalation(d)
 
-            # Filter out findings that were recently processed (cooldown)
-            now_ts = time.monotonic()
-            new_findings = []
-            for f in findings:
-                key = f"{f.finding_type}:{','.join(sorted(f.namespaces))}"
-                last_seen = self._finding_cooldown.get(key, 0)
-                if now_ts - last_seen >= self._finding_cooldown_secs:
-                    new_findings.append(f)
-                    self._finding_cooldown[key] = now_ts
+                findings = correlate(kept) if len(kept) >= 2 else []
+
+                for f in findings:
+                    self.store.add_finding({
+                        "finding_type": f.finding_type, "severity": f.severity,
+                        "summary": f.summary, "namespaces": f.namespaces,
+                        "signal_count": len(f.signal_ids),
+                        "clusters": [str(c)[:8] for c in f.clusters],
+                    })
+                    self._log_event("correlation", "finding", {
+                        "type": f.finding_type, "severity": f.severity,
+                        "summary": f.summary, "signals": len(f.signal_ids),
+                        "namespaces": f.namespaces[:3],
+                    })
+
+                now_ts = time.monotonic()
+                new_findings = []
+                for f in findings:
+                    key = f"{f.finding_type}:{','.join(sorted(f.namespaces))}"
+                    last_seen = self._finding_cooldown.get(key, 0)
+                    if now_ts - last_seen >= self._finding_cooldown_secs:
+                        new_findings.append(f)
+                        self._finding_cooldown[key] = now_ts
+            except Exception as e:
+                print(f"[DEEPFIELD] pipeline error: {e}", flush=True)
+                kept = []
+                total_dropped = len(buffer)
+                new_findings = []
 
             # Create reasoning tasks from new findings only
             tasks = create_reasoning_tasks(new_findings)
@@ -396,23 +428,15 @@ class StreamingSession:
                 self.metrics["projected_clusters"] = int(self._ema["projected_clusters"])
 
             buffer.clear()
-
-            # Snapshot every 2 seconds
-            now = time.monotonic()
-            if now - self._last_snapshot >= 2.0:
-                self._take_snapshot()
-                self._last_snapshot = now
-                # Reset window
-                self._window_start = now
-                self._window_signals = 0
-                self._window_tasks = 0
-                self._window_dropped = 0
-                self._window_findings = 0
-                self._window_latency_sum = 0
-                self._window_tps_sum = 0
-                self._window_inference = 0
-
             self._stop.wait(0.05)
+
+          except Exception as e:
+            import traceback
+            print(f"[DEEPFIELD] Process loop error: {e}\n{traceback.format_exc()}", flush=True)
+            buffer.clear()
+            self._stop.wait(1)
+
+        print(f"[DEEPFIELD] _process_loop exited (stop={self._stop.is_set()})", flush=True)
 
     def _inference_loop(self):
         """Dedicated thread that processes inference tasks one at a time."""

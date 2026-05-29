@@ -1,15 +1,17 @@
-import { useState } from 'react';
-import Dashboard from './pages/Dashboard';
-import LivePanel from './pages/LivePanel';
-import AutoDemo from './pages/AutoDemo';
-import LiveMonitoring from './pages/LiveMonitoring';
-import AgentObservatory from './pages/AgentObservatory';
+import { Routes, Route, NavLink, Outlet } from 'react-router-dom';
+import FleetOverview from './pages/FleetOverview';
+import SignalPipeline from './pages/SignalPipeline';
 import LLMObservatory from './pages/LLMObservatory';
+import ClusterDetail from './pages/ClusterDetail';
+import LivePanel from './pages/LivePanel';
 
-type View = 'demo' | 'simulator' | 'monitoring' | 'agents' | 'llm' | 'benchmarks';
-
-export default function App() {
-  const [view, setView] = useState<View>('demo');
+function AppLayout() {
+  const navItems = [
+    { to: '/', label: 'Fleet' },
+    { to: '/pipeline', label: 'Pipeline' },
+    { to: '/llm', label: 'LLM' },
+    { to: '/simulator', label: 'Simulator' },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--brand-dark)' }}>
@@ -24,18 +26,13 @@ export default function App() {
               <span className="text-lg font-semibold tracking-tight" style={{ fontFamily: 'Red Hat Display, sans-serif' }}>DeepField</span>
             </div>
             <nav className="flex gap-1">
-              {[
-                { id: 'demo' as View, label: 'Demo' },
-                { id: 'simulator' as View, label: 'Simulator' },
-                { id: 'monitoring' as View, label: 'Live Monitoring' },
-                { id: 'agents' as View, label: 'Agents' },
-                { id: 'llm' as View, label: 'LLM' },
-                { id: 'benchmarks' as View, label: 'Benchmarks' },
-              ].map(({ id, label }) => (
-                <button key={id} onClick={() => setView(id)}
-                  className={`px-3 py-2 rounded text-sm font-medium transition ${view === id ? 'bg-white/15 text-white' : 'text-[#6A6E73] hover:text-white hover:bg-white/10'}`}>
+              {navItems.map(({ to, label }) => (
+                <NavLink key={to} to={to} end={to === '/'}
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded text-sm font-medium transition ${isActive ? 'bg-white/15 text-white' : 'text-[#6A6E73] hover:text-white hover:bg-white/10'}`
+                  }>
                   {label}
-                </button>
+                </NavLink>
               ))}
             </nav>
           </div>
@@ -46,12 +43,7 @@ export default function App() {
         <div className="flex-1" style={{ backgroundColor: 'var(--brand-secondary)' }} />
       </div>
       <main className="flex-1">
-        {view === 'demo' ? <AutoDemo /> :
-         view === 'simulator' ? <LivePanel /> :
-         view === 'monitoring' ? <LiveMonitoring /> :
-         view === 'agents' ? <AgentObservatory /> :
-         view === 'llm' ? <LLMObservatory /> :
-         <Dashboard />}
+        <Outlet />
       </main>
       <footer style={{ backgroundColor: 'var(--brand-dark)' }} className="border-t border-[#333] text-[#6A6E73] text-sm py-5">
         <div className="max-w-7xl mx-auto px-6 lg:px-8 flex items-center justify-between">
@@ -64,5 +56,19 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<FleetOverview />} />
+        <Route path="/pipeline" element={<SignalPipeline />} />
+        <Route path="/llm" element={<LLMObservatory />} />
+        <Route path="/cluster/:id" element={<ClusterDetail />} />
+        <Route path="/simulator" element={<LivePanel />} />
+      </Route>
+    </Routes>
   );
 }

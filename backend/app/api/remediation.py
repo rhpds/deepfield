@@ -13,6 +13,9 @@ from typing import Optional
 
 router = APIRouter(prefix="/api/v1/remediation", tags=["remediation"])
 
+ECOSYSTEM_NAMESPACES = {"deepfield", "stargate", "partner-ai-launchpad", "platform-dashboard", "intel-rh-demo"}
+READ_ONLY_COMMANDS = {"get", "describe", "logs"}
+
 ALLOWED_COMMANDS = {
     "get": "Read resource state",
     "describe": "Detailed resource info",
@@ -68,6 +71,12 @@ async def execute_command(req: ExecuteRequest):
         return {"status": "error", "command": req.command, "output": f"Invalid resource name: {req.resource_name}"}
     if req.namespace and not re.match(r'^[a-zA-Z0-9._-]+$', req.namespace):
         return {"status": "error", "command": req.command, "output": f"Invalid namespace: {req.namespace}"}
+
+    if req.command not in READ_ONLY_COMMANDS and req.namespace not in ECOSYSTEM_NAMESPACES:
+        return {"status": "blocked", "command": req.command,
+                "output": f"Execution blocked: namespace '{req.namespace}' is outside the ecosystem. "
+                          f"Remediation actions are only allowed in: {', '.join(sorted(ECOSYSTEM_NAMESPACES))}. "
+                          f"Use 'get', 'describe', or 'logs' for read-only access to any namespace."}
 
     api_url = cluster_cfg["api_url"]
     token = cluster_cfg["token"]

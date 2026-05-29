@@ -1,13 +1,31 @@
 import { useState, useEffect } from 'react';
 
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
 interface ModelStats {
-  total_calls: number;
-  total_tokens_in: number;
-  total_tokens_out: number;
+  calls: number;
   avg_latency: number;
   avg_tps: number;
-  errors: number;
-  task_types: Record<string, number>;
+}
+
+interface Inference {
+  model: string;
+  task_type: string;
+  severity: string;
+  tokens_in: number;
+  tokens_out: number;
+  latency_ms: number;
+  ttft_ms: number;
+  tokens_per_second: number;
+  output: string;
+  prompt: string;
+  error: string;
+  timestamp: string;
+  /* legacy fields the backend may also send */
+  _ts?: string;
+  tier?: string;
 }
 
 interface RemediationResult {
@@ -16,12 +34,40 @@ interface RemediationResult {
   output: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+const SEV_COLORS: Record<string, string> = {
+  critical: '#C9190B',
+  high: '#EE0000',
+  medium: '#F0AB00',
+  low: '#0071C5',
+  info: '#6A6E73',
+};
+
+function sevColor(sev: string): string {
+  return SEV_COLORS[sev?.toLowerCase()] ?? '#6A6E73';
+}
+
+function hwLane(model: string): 'gaudi3' | 'xeon6' {
+  const lower = model.toLowerCase();
+  if (lower.includes('cpu') || lower.includes('granite') || lower.includes('phi3_mini') || lower.includes('qwen25')) {
+    return 'xeon6';
+  }
+  return 'gaudi3';
+}
+
 function tryParseJSON(text: string): Record<string, unknown> | null {
   try {
     const cleaned = text.replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
     return JSON.parse(cleaned);
   } catch { return null; }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Remediation Panel (preserved from original)                        */
+/* ------------------------------------------------------------------ */
 
 function RemediationPanel({ output, finding }: { output: string; finding: Record<string, unknown> }) {
   const [results, setResults] = useState<Record<string, RemediationResult>>({});
@@ -71,14 +117,12 @@ function RemediationPanel({ output, finding }: { output: string; finding: Record
     if (command === 'scale') resourceKind = 'Deployment';
     if (command === 'logs') resourceKind = 'Pod';
 
-    // Fall back to finding context for namespace/cluster
     const promptStr = String((finding as Record<string, unknown>).prompt ?? '');
     const evidencePart = promptStr.split('Evidence:')[1] ?? '{}';
     const evidenceJson = tryParseJSON(evidencePart.trim());
     if (!namespace && evidenceJson?.namespaces) namespace = (evidenceJson.namespaces as string[])[0] ?? '';
     const cluster = (evidenceJson?.clusters as string[] ?? [])[0] ?? 'infra01';
 
-    // If still no resource name, try to get from affected_resources in the parsed output
     if (!resourceName && parsed?.affected_resources) {
       const resources = parsed.affected_resources as string[];
       if (resources.length > 0) resourceName = resources[0];
@@ -164,151 +208,374 @@ function RemediationPanel({ output, finding }: { output: string; finding: Record
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Main Component                                                     */
+/* ------------------------------------------------------------------ */
+
 export default function LLMObservatory() {
-  const [models, setModels] = useState<Record<string, ModelStats>>({});
-  const [inferences, setInferences] = useState<Array<Record<string, unknown>>>([]);
+  /* SSE live state */
+  const [sseModels, setSseModels] = useState<Record<string, ModelStats>>({});
+
+  /* REST state */
+  const [inferences, setInferences] = useState<Inference[]>([]);
   const [expanded, setExpanded] = useState<number | null>(null);
 
+  /* ----- SSE connection ----- */
   useEffect(() => {
-    const poll = setInterval(async () => {
+    const es = new EventSource('/api/v1/stream');
+
+    const handler = (e: MessageEvent) => {
       try {
-        const resp = await fetch('/api/v1/observatory/llm');
-        const data = await resp.json();
-        if (data.models) setModels(data.models);
-        if (data.recent_inferences) setInferences(data.recent_inferences);
-      } catch { /* */ }
-    }, 2000);
-    return () => clearInterval(poll);
+        const d = JSON.parse(e.data);
+        if (d.model_stats) setSseModels(d.model_stats);
+      } catch { /* ignore malformed */ }
+    };
+
+    es.addEventListener('live', handler);
+    es.addEventListener('session', handler);
+
+    return () => es.close();
   }, []);
 
-  const totalCalls = Object.values(models).reduce((s, m) => s + m.total_calls, 0);
-  const totalTokensOut = Object.values(models).reduce((s, m) => s + m.total_tokens_out, 0);
+  /* ----- REST polling for inference history ----- */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchInferences() {
+      try {
+        const resp = await fetch('/api/v1/observatory/history/inferences');
+        if (cancelled) return;
+        const data = await resp.json();
+        if (data.inferences) {
+          setInferences(data.inferences);
+        } else if (data.recent_inferences) {
+          /* fallback: legacy endpoint shape */
+          setInferences(data.recent_inferences);
+        }
+      } catch {
+        /* Also try legacy endpoint */
+        try {
+          const resp = await fetch('/api/v1/observatory/llm');
+          if (cancelled) return;
+          const data = await resp.json();
+          if (data.recent_inferences) setInferences(data.recent_inferences);
+          /* Merge model data from REST if SSE hasn't provided any */
+          if (data.models && Object.keys(sseModels).length === 0) {
+            const mapped: Record<string, ModelStats> = {};
+            for (const [name, stats] of Object.entries(data.models)) {
+              const s = stats as Record<string, number>;
+              mapped[name] = { calls: s.total_calls ?? 0, avg_latency: s.avg_latency ?? 0, avg_tps: s.avg_tps ?? 0 };
+            }
+            setSseModels(mapped);
+          }
+        } catch { /* */ }
+      }
+    }
+
+    fetchInferences();
+    const poll = setInterval(fetchInferences, 3000);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [sseModels]);
+
+  /* ----- Derived: model entries ----- */
+  const modelEntries = Object.entries(sseModels);
+
+  /* ----- Derived: hardware lane aggregates ----- */
+  const laneTotals = { gaudi3: { calls: 0, latencySum: 0, count: 0 }, xeon6: { calls: 0, latencySum: 0, count: 0 } };
+  for (const [name, stats] of modelEntries) {
+    const lane = hwLane(name);
+    laneTotals[lane].calls += stats.calls;
+    laneTotals[lane].latencySum += stats.avg_latency * stats.calls;
+    laneTotals[lane].count += stats.calls;
+  }
+  const gaudiAvgLatency = laneTotals.gaudi3.count > 0 ? Math.round(laneTotals.gaudi3.latencySum / laneTotals.gaudi3.count) : 0;
+  const xeonAvgLatency = laneTotals.xeon6.count > 0 ? Math.round(laneTotals.xeon6.latencySum / laneTotals.xeon6.count) : 0;
+
+  /* ----- Recent inferences, newest first ----- */
+  const recentInferences = inferences.slice().reverse();
 
   return (
-    <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-white" style={{ fontFamily: 'Red Hat Display' }}>LLM Observatory</h1>
-        <span className="text-xs text-[#6A6E73]">Model fleet: Gaudi 3 ▲ + Xeon 6 ▼</span>
+    <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
+
+      {/* ============================================================ */}
+      {/*  Header                                                       */}
+      {/* ============================================================ */}
+      <div>
+        <h1
+          className="text-3xl font-bold text-white mb-1"
+          style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+        >
+          LLM Observatory
+        </h1>
+        <p className="text-sm text-[#6A6E73]">Model performance, inference history, cost tracking</p>
       </div>
 
-      {/* Aggregate */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="rounded-lg p-3 border border-[#333] text-center">
-          <div className="text-2xl font-bold text-white tabular-nums">{totalCalls.toLocaleString()}</div>
-          <div className="text-[10px] text-[#6A6E73]">Total Calls</div>
+      {/* ============================================================ */}
+      {/*  Model Cards — horizontal row                                 */}
+      {/* ============================================================ */}
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+          Active Models
         </div>
-        <div className="rounded-lg p-3 border border-[#333] text-center">
-          <div className="text-2xl font-bold text-orange-400 tabular-nums">{totalTokensOut.toLocaleString()}</div>
-          <div className="text-[10px] text-[#6A6E73]">Tokens Generated</div>
-        </div>
-        <div className="rounded-lg p-3 border border-[#333] text-center">
-          <div className="text-2xl font-bold text-white tabular-nums">{Object.keys(models).length}</div>
-          <div className="text-[10px] text-[#6A6E73]">Active Models</div>
-        </div>
-        <div className="rounded-lg p-3 border border-[#333] text-center">
-          <div className="text-2xl font-bold tabular-nums" style={{ color: 'var(--brand-primary)' }}>
-            {Object.values(models).reduce((s, m) => s + m.errors, 0)}
+        {modelEntries.length === 0 ? (
+          <div className="text-sm text-[#6A6E73]">No model data yet</div>
+        ) : (
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {modelEntries.map(([name, stats]) => {
+              const lane = hwLane(name);
+              const isGpu = lane === 'gaudi3';
+              return (
+                <div
+                  key={name}
+                  className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4 min-w-[200px] flex-shrink-0"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-mono text-white truncate">
+                      {name.split('_').slice(0, 2).join('_')}
+                    </span>
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ml-auto"
+                      style={{
+                        color: isGpu ? '#C9190B' : '#0071C5',
+                        backgroundColor: isGpu ? '#C9190B20' : '#0071C520',
+                      }}
+                    >
+                      {isGpu ? 'Gaudi 3' : 'Xeon 6'}
+                    </span>
+                  </div>
+                  <div
+                    className="text-2xl font-bold text-white tabular-nums"
+                    style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+                  >
+                    {stats.calls.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-[#6A6E73] uppercase tracking-wider mt-0.5">
+                    Total Calls
+                  </div>
+                  <div className="flex gap-3 mt-2 text-xs tabular-nums">
+                    <span className="text-[#6A6E73]">{stats.avg_latency}ms avg</span>
+                    <span className="text-orange-400">{stats.avg_tps} tok/s</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div className="text-[10px] text-[#6A6E73]">Errors</div>
-        </div>
+        )}
       </div>
 
-      {/* Model fleet */}
-      <div className="rounded-xl p-4 border border-[#333]">
-        <span className="text-[10px] text-[#6A6E73] uppercase tracking-wide font-semibold">Model Fleet</span>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-          {Object.entries(models).map(([name, stats]) => {
-            const isMicro = name.includes('cpu') || name.includes('granite') || name.includes('phi3_mini') || name.includes('qwen25');
-            return (
-              <div key={name} className={`bg-[#1a1a1a] rounded p-3 border-l-2 ${isMicro ? 'border-[#0071C5]' : 'border-orange-400'}`}>
-                <div className="flex items-center gap-1">
-                  <span className={`text-[10px] font-bold ${isMicro ? 'text-[#0071C5]' : 'text-orange-400'}`}>{isMicro ? '▼' : '▲'}</span>
-                  <span className="text-xs font-mono text-[#6A6E73] truncate">{name.split('_').slice(0, 2).join('_')}</span>
-                </div>
-                <div className="text-xl font-bold text-white mt-1">{stats.total_calls}</div>
-                <div className="text-[10px] text-[#6A6E73]">calls</div>
-                <div className="text-xs mt-1 space-y-0.5">
-                  <div className="text-orange-400">{stats.avg_tps} tok/s</div>
-                  <div className="text-[#6A6E73]">{stats.avg_latency}ms avg</div>
-                  <div className="text-[#6A6E73]">{stats.total_tokens_out.toLocaleString()} tokens</div>
-                  {stats.errors > 0 ? <div className="text-red-400">{stats.errors} errors</div> : null}
-                </div>
-                {Object.keys(stats.task_types).length > 0 ? (
-                  <div className="mt-1 text-[10px] text-[#6A6E73]">
-                    {Object.entries(stats.task_types).map(([t, c]) => `${t}:${c}`).join(' ')}
-                  </div>
-                ) : null}
+      {/* ============================================================ */}
+      {/*  Hardware Lane Split                                          */}
+      {/* ============================================================ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+              style={{ color: '#C9190B', backgroundColor: '#C9190B20' }}
+            >
+              GPU
+            </span>
+            <span className="text-sm font-semibold text-white">Gaudi 3</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div
+                className="text-2xl font-bold text-white tabular-nums"
+                style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+              >
+                {laneTotals.gaudi3.calls.toLocaleString()}
               </div>
-            );
-          })}
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mt-1">
+                Total Calls
+              </div>
+            </div>
+            <div>
+              <div
+                className="text-2xl font-bold text-white tabular-nums"
+                style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+              >
+                {gaudiAvgLatency}ms
+              </div>
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mt-1">
+                Avg Latency
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+              style={{ color: '#0071C5', backgroundColor: '#0071C520' }}
+            >
+              CPU
+            </span>
+            <span className="text-sm font-semibold text-white">Xeon 6</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div
+                className="text-2xl font-bold text-white tabular-nums"
+                style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+              >
+                {laneTotals.xeon6.calls.toLocaleString()}
+              </div>
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mt-1">
+                Total Calls
+              </div>
+            </div>
+            <div>
+              <div
+                className="text-2xl font-bold text-white tabular-nums"
+                style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+              >
+                {xeonAvgLatency}ms
+              </div>
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mt-1">
+                Avg Latency
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Inference Log */}
-      <div className="rounded-xl p-4 border border-[#333]">
-        <span className="text-[10px] text-[#6A6E73] uppercase tracking-wide font-semibold">Inference Log ({inferences.length})</span>
-        <div className="mt-2 space-y-1 max-h-[700px] overflow-y-auto">
-          {inferences.slice().reverse().map((inf, i) => {
-            const isExpanded = expanded === i;
-            const isMicro = String(inf.tier ?? '') === 'micro';
-            const borderColor = isMicro ? '#0071C5' : '#EC7A08';
-            const outputStr = String(inf.output ?? '');
-            const parsed = tryParseJSON(outputStr);
-            const hasRemediation = parsed?.remediation != null;
+      {/* ============================================================ */}
+      {/*  Recent Inferences                                            */}
+      {/* ============================================================ */}
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+          Recent Inferences ({inferences.length})
+        </div>
+        {recentInferences.length === 0 ? (
+          <div className="text-sm text-[#6A6E73]">No inferences yet. Start a session to see inference logs.</div>
+        ) : (
+          <div className="space-y-1 max-h-[700px] overflow-y-auto">
+            {recentInferences.map((inf, i) => {
+              const isExpanded = expanded === i;
+              const lane = hwLane(String(inf.model ?? ''));
+              const isGpu = lane === 'gaudi3';
+              const borderColor = isGpu ? '#EC7A08' : '#0071C5';
+              const outputStr = String(inf.output ?? '');
+              const parsed = tryParseJSON(outputStr);
+              const hasRemediation = parsed?.remediation != null;
+              const sev = String(inf.severity ?? '');
+              const ts = inf.timestamp ?? inf._ts;
 
-            return (
-              <div key={i} className="bg-[#1a1a1a] rounded border-l-2 cursor-pointer hover:bg-[#252525]"
-                style={{ borderColor }} onClick={() => setExpanded(isExpanded ? null : i)}>
-                <div className="p-2 flex items-center gap-2 text-xs">
-                  <span className={`font-bold text-[10px] ${isMicro ? 'text-[#0071C5]' : 'text-orange-400'}`}>
-                    {isMicro ? '▼' : '▲'}
-                  </span>
-                  <span className="font-mono text-[#6A6E73]">{String(inf.model ?? '').split('_').slice(0, 2).join('_')}</span>
-                  <span className="text-white">{String(inf.task_type ?? '')}</span>
-                  {inf.severity ? <span className={`text-[10px] px-1 rounded ${String(inf.severity) === 'critical' ? 'bg-red-900/50 text-red-300' : String(inf.severity) === 'high' ? 'bg-orange-900/50 text-orange-300' : 'bg-yellow-900/50 text-yellow-300'}`}>{String(inf.severity)}</span> : null}
-                  {hasRemediation && <span className="text-[10px] px-1 rounded bg-blue-900/50 text-blue-300">has remediation</span>}
-                  <span className="text-[#6A6E73] ml-auto">{inf._ts ? new Date(String(inf._ts)).toLocaleTimeString() : ''}</span>
-                  <span className="text-[#6A6E73]">{String(inf.latency_ms ?? '')}ms</span>
-                  <span className="text-orange-400">{String(inf.tokens_out ?? '')}tok</span>
-                  <span className="text-[#6A6E73]">{isExpanded ? '▲' : '▼'}</span>
-                </div>
-                {isExpanded ? (
-                  <div className="px-2 pb-2 space-y-2">
-                    <div>
-                      <div className="text-[10px] text-[#6A6E73] uppercase mb-0.5">Prompt</div>
-                      <div className="bg-[#252525] rounded p-2 text-xs text-[#9CA3AF] whitespace-pre-wrap max-h-32 overflow-y-auto font-mono">{String(inf.prompt ?? '')}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-[#6A6E73] uppercase mb-0.5">Output</div>
-                      {parsed ? (
-                        <div className="bg-[#252525] rounded p-2 text-xs whitespace-pre-wrap max-h-64 overflow-y-auto font-mono">
-                          {parsed.root_cause && <div className="mb-1"><span className="text-[#6A6E73]">Root Cause:</span> <span className="text-white">{String(parsed.root_cause)}</span></div>}
-                          {parsed.category && <div className="mb-1"><span className="text-[#6A6E73]">Category:</span> <span className="text-yellow-400">{String(parsed.category)}</span></div>}
-                          {parsed.confidence != null && <div className="mb-1"><span className="text-[#6A6E73]">Confidence:</span> <span className="text-orange-400">{String(parsed.confidence)}</span></div>}
-                          {parsed.evidence_chain && <div className="mb-1"><span className="text-[#6A6E73]">Evidence:</span> <span className="text-[#9CA3AF]">{(parsed.evidence_chain as string[]).join(' → ')}</span></div>}
-                          {parsed.affected_resources && <div className="mb-1"><span className="text-[#6A6E73]">Affected:</span> <span className="text-white">{(parsed.affected_resources as string[]).join(', ')}</span></div>}
-                          {!parsed.root_cause && <span className="text-white">{JSON.stringify(parsed, null, 2)}</span>}
+              return (
+                <div
+                  key={i}
+                  className="bg-[#1a1a1a] rounded border-l-2 cursor-pointer hover:bg-[#252525] transition-colors"
+                  style={{ borderColor }}
+                  onClick={() => setExpanded(isExpanded ? null : i)}
+                >
+                  <div className="p-2 flex items-center gap-2 text-xs">
+                    {/* Model badge */}
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                      style={{
+                        color: isGpu ? '#EC7A08' : '#0071C5',
+                        backgroundColor: isGpu ? '#EC7A0820' : '#0071C520',
+                      }}
+                    >
+                      {String(inf.model ?? '').split('_').slice(0, 2).join('_')}
+                    </span>
+
+                    {/* Task type */}
+                    <span className="text-white font-medium">{String(inf.task_type ?? '')}</span>
+
+                    {/* Severity badge */}
+                    {sev && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                        style={{
+                          color: sevColor(sev),
+                          backgroundColor: `${sevColor(sev)}20`,
+                        }}
+                      >
+                        {sev}
+                      </span>
+                    )}
+
+                    {hasRemediation && (
+                      <span className="text-[10px] px-1 rounded bg-blue-900/50 text-blue-300">
+                        has remediation
+                      </span>
+                    )}
+
+                    {/* Latency + tokens on right */}
+                    <span className="text-[#6A6E73] ml-auto whitespace-nowrap">
+                      {ts ? new Date(String(ts)).toLocaleTimeString() : ''}
+                    </span>
+                    <span className="text-[#6A6E73] tabular-nums">{String(inf.latency_ms ?? '')}ms</span>
+                    <span className="text-orange-400 tabular-nums">{String(inf.tokens_out ?? '')}tok</span>
+                    <span className="text-[#6A6E73]">{isExpanded ? '▲' : '▼'}</span>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="px-2 pb-2 space-y-2">
+                      {/* Prompt */}
+                      <div>
+                        <div className="text-[10px] text-[#6A6E73] uppercase mb-0.5">Prompt</div>
+                        <div className="bg-[#252525] rounded p-2 text-xs text-[#9CA3AF] whitespace-pre-wrap max-h-32 overflow-y-auto font-mono">
+                          {String(inf.prompt ?? '')}
                         </div>
-                      ) : (
-                        <div className="bg-[#252525] rounded p-2 text-xs text-white whitespace-pre-wrap max-h-48 overflow-y-auto">{outputStr}</div>
-                      )}
-                    </div>
-                    {hasRemediation && <RemediationPanel output={outputStr} finding={inf} />}
-                    {inf.error ? <div className="text-xs text-red-400">Error: {String(inf.error)}</div> : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                      </div>
 
-      {!Object.keys(models).length && (
-        <div className="text-center py-12 text-[#6A6E73]">
-          <p className="text-lg mb-2">No LLM data yet</p>
-          <p className="text-sm">Start a session to see model performance and inference logs.</p>
-        </div>
-      )}
+                      {/* Output */}
+                      <div>
+                        <div className="text-[10px] text-[#6A6E73] uppercase mb-0.5">Output</div>
+                        {parsed ? (
+                          <div className="bg-[#252525] rounded p-2 text-xs whitespace-pre-wrap max-h-64 overflow-y-auto font-mono">
+                            {parsed.root_cause ? (
+                              <div className="mb-1">
+                                <span className="text-[#6A6E73]">Root Cause:</span>{' '}
+                                <span className="text-white">{String(parsed.root_cause)}</span>
+                              </div>
+                            ) : null}
+                            {parsed.category ? (
+                              <div className="mb-1">
+                                <span className="text-[#6A6E73]">Category:</span>{' '}
+                                <span className="text-yellow-400">{String(parsed.category)}</span>
+                              </div>
+                            ) : null}
+                            {parsed.confidence != null ? (
+                              <div className="mb-1">
+                                <span className="text-[#6A6E73]">Confidence:</span>{' '}
+                                <span className="text-orange-400">{String(parsed.confidence)}</span>
+                              </div>
+                            ) : null}
+                            {parsed.evidence_chain ? (
+                              <div className="mb-1">
+                                <span className="text-[#6A6E73]">Evidence:</span>{' '}
+                                <span className="text-[#9CA3AF]">{(parsed.evidence_chain as string[]).join(' → ')}</span>
+                              </div>
+                            ) : null}
+                            {parsed.affected_resources ? (
+                              <div className="mb-1">
+                                <span className="text-[#6A6E73]">Affected:</span>{' '}
+                                <span className="text-white">{(parsed.affected_resources as string[]).join(', ')}</span>
+                              </div>
+                            ) : null}
+                            {!parsed.root_cause && <span className="text-white">{JSON.stringify(parsed, null, 2)}</span>}
+                          </div>
+                        ) : (
+                          <div className="bg-[#252525] rounded p-2 text-xs text-white whitespace-pre-wrap max-h-48 overflow-y-auto font-mono">
+                            {outputStr}
+                          </div>
+                        )}
+                      </div>
+
+                      {hasRemediation && <RemediationPanel output={outputStr} finding={inf as unknown as Record<string, unknown>} />}
+                      {inf.error && <div className="text-xs text-red-400">Error: {String(inf.error)}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
