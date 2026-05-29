@@ -242,7 +242,7 @@ class StreamingSession:
     def _process_loop(self):
         """Continuously drains signal queue, normalizes, filters, correlates, routes."""
         buffer = []
-        print("[DEEPFIELD] _process_loop started", flush=True)
+        logger.info("_process_loop started")
 
         while not self._stop.is_set():
           try:
@@ -287,7 +287,7 @@ class StreamingSession:
             try:
                 normalized = [normalize_signal(s) for s in buffer]
             except Exception as e:
-                print(f"[DEEPFIELD] normalize error: {e}", flush=True)
+                logger.warning("normalize error: %s", e)
                 buffer.clear()
                 continue
 
@@ -300,7 +300,7 @@ class StreamingSession:
                 for cn, sigs in by_cluster.items():
                     self.store.update_cluster_stats(cn, sigs)
             except Exception as e:
-                print(f"[DEEPFIELD] cluster stats error: {e}", flush=True)
+                logger.warning("cluster stats error: %s", e)
 
             # Store only actionable signals (medium/high/critical) — skip info noise
             try:
@@ -315,7 +315,7 @@ class StreamingSession:
                         "raw_payload": raw.raw_payload, "timestamp": raw.timestamp.isoformat(),
                     })
             except Exception as e:
-                print(f"[DEEPFIELD] store signal error: {e}", flush=True)
+                logger.warning("store signal error: %s", e)
 
             # Filter — nano agents, correlate, create tasks
             try:
@@ -361,7 +361,7 @@ class StreamingSession:
                         new_findings.append(f)
                         self._finding_cooldown[key] = now_ts
             except Exception as e:
-                print(f"[DEEPFIELD] pipeline error: {e}", flush=True)
+                logger.warning("pipeline error: %s", e)
                 kept = []
                 total_dropped = len(buffer)
                 new_findings = []
@@ -431,12 +431,11 @@ class StreamingSession:
             self._stop.wait(0.05)
 
           except Exception as e:
-            import traceback
-            print(f"[DEEPFIELD] Process loop error: {e}\n{traceback.format_exc()}", flush=True)
+            logger.error("Process loop error (recovering): %s", e, exc_info=True)
             buffer.clear()
             self._stop.wait(1)
 
-        print(f"[DEEPFIELD] _process_loop exited (stop={self._stop.is_set()})", flush=True)
+        logger.info("_process_loop exited (stop=%s)", self._stop.is_set())
 
     def _inference_loop(self):
         """Dedicated thread that processes inference tasks one at a time."""
