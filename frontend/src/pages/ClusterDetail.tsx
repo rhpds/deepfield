@@ -65,7 +65,7 @@ function relativeTime(ts: string): string {
 export default function ClusterDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { since } = useTimeRange();
+  const { since, sinceISO } = useTimeRange();
 
   const [cluster, setCluster] = useState<ClusterData | null>(null);
   const [signals, setSignals] = useState<ObsSignal[] | null>(null);
@@ -79,7 +79,7 @@ export default function ClusterDetail() {
       try {
         const [clRes, sigRes] = await Promise.all([
           fetch('/api/v1/observatory/clusters'),
-          fetch('/api/v1/observatory/signals'),
+          fetch(`/api/v1/observatory/signals?since=${encodeURIComponent(sinceISO())}`),
         ]);
         if (cancelled) return;
 

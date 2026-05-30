@@ -83,7 +83,7 @@ function relativeTime(ts: string): string {
 
 export default function FleetOverview() {
   const navigate = useNavigate();
-  const { since } = useTimeRange();
+  const { since, sinceISO } = useTimeRange();
 
   /* SSE live state */
   const [live, setLive] = useState<StreamState | null>(null);
@@ -130,10 +130,11 @@ export default function FleetOverview() {
 
     async function fetchAll() {
       try {
+        const sinceParam = `since=${encodeURIComponent(sinceISO())}`;
         const [clRes, sigRes, agRes] = await Promise.all([
           fetch('/api/v1/observatory/clusters'),
-          fetch('/api/v1/observatory/signals'),
-          fetch('/api/v1/observatory/agents'),
+          fetch(`/api/v1/observatory/signals?${sinceParam}`),
+          fetch(`/api/v1/observatory/agents?${sinceParam}`),
         ]);
         if (cancelled) return;
         const clData = await clRes.json();
@@ -166,7 +167,7 @@ export default function FleetOverview() {
     fetchAll();
     const poll = setInterval(fetchAll, 30000);
     return () => { cancelled = true; clearInterval(poll); };
-  }, []);
+  }, [sinceISO]);
 
   /* ----- Derived values ----- */
   const m = live?.metrics;

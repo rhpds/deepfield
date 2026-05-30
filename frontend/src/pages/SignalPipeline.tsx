@@ -54,7 +54,7 @@ function outcomeStyle(outcome: string) {
 /* ------------------------------------------------------------------ */
 
 export default function SignalPipeline() {
-  const { since } = useTimeRange();
+  const { since, sinceISO } = useTimeRange();
 
   /* SSE live state */
   const [metrics, setMetrics] = useState<StreamMetrics>({});
@@ -96,7 +96,7 @@ export default function SignalPipeline() {
 
     async function fetchAgents() {
       try {
-        const resp = await fetch('/api/v1/observatory/agents');
+        const resp = await fetch(`/api/v1/observatory/agents?since=${encodeURIComponent(sinceISO())}`);
         if (cancelled) return;
         const data = await resp.json();
         if (data.agents) {

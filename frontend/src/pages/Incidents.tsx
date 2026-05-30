@@ -106,7 +106,7 @@ function normalizeSignal(raw: unknown): RawSignal | null {
 
 export default function Incidents() {
   const navigate = useNavigate();
-  const { since } = useTimeRange();
+  const { since, sinceISO } = useTimeRange();
 
   const [signals, setSignals] = useState<RawSignal[] | null>(null);
   const [inferences, setInferences] = useState<Inference[]>([]);
@@ -117,9 +117,9 @@ export default function Incidents() {
   const fetchAll = useCallback(async () => {
     try {
       const [sigRes, infRes, remRes] = await Promise.all([
-        fetch('/api/v1/observatory/signals'),
-        fetch('/api/v1/observatory/history/inferences'),
-        fetch('/api/v1/observatory/history/remediations'),
+        fetch(`/api/v1/observatory/signals?since=${encodeURIComponent(sinceISO())}`),
+        fetch(`/api/v1/observatory/history/inferences?since=${encodeURIComponent(sinceISO())}`),
+        fetch(`/api/v1/observatory/history/remediations?since=${encodeURIComponent(sinceISO())}`),
       ]);
 
       const sigData = await sigRes.json();
