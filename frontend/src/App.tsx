@@ -5,6 +5,7 @@ import LiveFlow from './pages/LiveFlow';
 import LLMObservatory from './pages/LLMObservatory';
 import ClusterDetail from './pages/ClusterDetail';
 import LivePanel from './pages/LivePanel';
+import Incidents from './pages/Incidents';
 
 function AppLayout() {
   const navItems = [
@@ -12,6 +13,7 @@ function AppLayout() {
     { to: '/pipeline', label: 'Pipeline' },
     { to: '/live', label: 'Live Flow' },
     { to: '/llm', label: 'LLM' },
+    { to: '/incidents', label: 'Incidents' },
     { to: '/simulator', label: 'Simulator' },
   ];
 
@@ -70,6 +72,7 @@ export default function App() {
         <Route path="/live" element={<LiveFlow />} />
         <Route path="/llm" element={<LLMObservatory />} />
         <Route path="/cluster/:id" element={<ClusterDetail />} />
+        <Route path="/incidents" element={<Incidents />} />
         <Route path="/simulator" element={<LivePanel />} />
       </Route>
     </Routes>

@@ -73,18 +73,23 @@ def _load_remote_classes() -> Optional[Dict[str, Dict[str, Any]]]:
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
 
-        remote_classes = data.get("classes", {})
+        remote_classes = data.get("classes", [])
+        if isinstance(remote_classes, dict):
+            remote_classes = list(remote_classes.values())
         compiled = {}
-        for class_name, class_def in remote_classes.items():
-            pattern_str = class_def.get("pattern", "")
-            if not pattern_str:
+        for entry in remote_classes:
+            name = entry.get("name", "")
+            patterns = entry.get("patterns", [])
+            if not name or not patterns:
                 continue
+            pattern_str = "|".join(patterns)
             try:
-                compiled[class_name] = {
+                compiled[name] = {
                     "regex": re.compile(pattern_str, re.IGNORECASE),
-                    "severity": class_def.get("severity", "medium"),
-                    "remediation": class_def.get("remediation", []),
+                    "severity": entry.get("severity", "medium"),
+                    "remediation": entry.get("remediation", ""),
                     "pattern": pattern_str,
+                    "category": entry.get("category", "general"),
                 }
             except re.error:
                 continue

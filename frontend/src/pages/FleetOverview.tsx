@@ -201,14 +201,22 @@ export default function FleetOverview() {
       {/* ============================================================ */}
       {/*  Header                                                       */}
       {/* ============================================================ */}
-      <div>
-        <h1
-          className="text-3xl font-bold text-white mb-1"
-          style={{ fontFamily: 'Red Hat Display, sans-serif' }}
-        >
-          Fleet Overview
-        </h1>
-        <p className="text-sm text-[#6A6E73]">Signal intelligence across your fleet</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1
+            className="text-3xl font-bold text-white mb-1"
+            style={{ fontFamily: 'Red Hat Display, sans-serif' }}
+          >
+            Fleet Overview
+          </h1>
+          <p className="text-sm text-[#6A6E73]">Signal intelligence across your fleet</p>
+        </div>
+        {!live && (
+          <div className="flex items-center gap-2 text-xs text-[#6A6E73]">
+            <span className="w-2 h-2 rounded-full bg-[#6A6E73] animate-pulse" />
+            Connecting to live stream...
+          </div>
+        )}
       </div>
 
       {/* ============================================================ */}
@@ -288,9 +296,13 @@ export default function FleetOverview() {
           Nano-Agent Grid
         </div>
         {agents === null ? (
-          <div className="text-sm text-[#6A6E73]">Loading...</div>
+          <div className="animate-pulse space-y-3">
+            {[1,2].map(i => (
+              <div key={i} className="bg-[#212121] rounded-lg h-16" />
+            ))}
+          </div>
         ) : agents.length === 0 ? (
-          <div className="text-sm text-[#6A6E73]">No agents registered</div>
+          <div className="text-sm text-[#6A6E73]">Pipeline initializing...</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {agents.map((agent) => {
@@ -371,9 +383,13 @@ export default function FleetOverview() {
           Recent Signals
         </div>
         {signals === null ? (
-          <div className="text-sm text-[#6A6E73]">Loading...</div>
+          <div className="animate-pulse space-y-2">
+            {[1,2,3].map(i => (
+              <div key={i} className="bg-[#212121] rounded-lg h-8" />
+            ))}
+          </div>
         ) : recentSignals.length === 0 ? (
-          <div className="text-sm text-[#6A6E73]">No recent signals</div>
+          <div className="text-sm text-[#6A6E73]">Monitoring active &mdash; waiting for signals</div>
         ) : (
           <div className="space-y-1">
             {recentSignals.map((sig) => (
@@ -421,11 +437,23 @@ export default function FleetOverview() {
       {/* ============================================================ */}
       {/*  Cluster cards (clickable navigation)                         */}
       {/* ============================================================ */}
-      {clusters && clusters.length > 0 && (
-        <div className="border border-[#333] rounded-xl p-4">
-          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
-            Cluster Detail
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+          Cluster Detail
+        </div>
+        {clusters === null ? (
+          <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[1,2,3].map(i => (
+              <div key={i} className="bg-[#212121] rounded-lg h-28" />
+            ))}
           </div>
+        ) : clusters.length === 0 ? (
+          <div className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-5 text-center">
+            <div className="text-sm text-[#6A6E73]">
+              No clusters connected &mdash; configure <code className="text-xs bg-[#1a1a1a] px-1.5 py-0.5 rounded text-white">CLUSTER_1_*</code> env vars
+            </div>
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {clusters.map((cl) => (
               <div
@@ -464,8 +492,8 @@ export default function FleetOverview() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
