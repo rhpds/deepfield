@@ -80,6 +80,11 @@ class ReasoningTask(BaseModel):
         "cross_cluster_correlation",
         "fleet_summary",
         "capacity_estimate",
+        "classify_signal",
+        "correlate_findings",
+        "suggest_remediation",
+        "explain_signal",
+        "filter_noise",
     ]
     model_preference: Literal[
         "phi4", "qwen3", "qwen3b", "deepseek", "llama70b",

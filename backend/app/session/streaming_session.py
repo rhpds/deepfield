@@ -9,6 +9,19 @@ from collections import deque
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("deepfield.session")
 from concurrent.futures import ThreadPoolExecutor
+
+
+# ---------- thread-level crash safety ----------
+def _thread_exception_hook(args):
+    """Catch unhandled exceptions in *any* thread (Python 3.8+)."""
+    logger.error(
+        "Thread %s died with unhandled exception: %s",
+        args.thread.name if args.thread else "<unknown>",
+        args.exc_value,
+        exc_info=(args.exc_type, args.exc_value, args.exc_tb),
+    )
+
+threading.excepthook = _thread_exception_hook
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional
@@ -126,8 +139,14 @@ class StreamingSession:
         self._emitter_thread = None
         self._processor_thread = None
         self._inference_worker = None
+        self._watchdog_thread = None
         self._inference_pool = None
         self._lock = threading.Lock()
+
+        # Heartbeat — updated every process-loop iteration
+        self._last_heartbeat = 0.0
+        self._heartbeat_lock = threading.Lock()
+        self._process_loop_restarts = 0
 
         # Window tracking
         self._window_start = 0
@@ -162,13 +181,20 @@ class StreamingSession:
         self.status = "running"
         self._window_start = time.monotonic()
         self._last_snapshot = time.monotonic()
+        self._last_heartbeat = time.monotonic()
         self._inference_pool = ThreadPoolExecutor(max_workers=20)
-        self._emitter_thread = threading.Thread(target=self._emit_signals, daemon=True)
-        self._processor_thread = threading.Thread(target=self._process_loop, daemon=True)
-        self._inference_worker = threading.Thread(target=self._inference_loop, daemon=True)
+        self._emitter_thread = threading.Thread(
+            target=self._emit_signals, daemon=True, name="deepfield-emitter")
+        self._processor_thread = threading.Thread(
+            target=self._process_loop, daemon=True, name="deepfield-processor")
+        self._inference_worker = threading.Thread(
+            target=self._inference_loop, daemon=True, name="deepfield-inference")
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop, daemon=True, name="deepfield-watchdog")
         self._emitter_thread.start()
         self._processor_thread.start()
         self._inference_worker.start()
+        self._watchdog_thread.start()
 
     def stop(self):
         self._stop.set()
@@ -240,16 +266,31 @@ class StreamingSession:
             gen_seed += 1
             self._stop.wait(0.1)  # 10 batches per second
 
+    # Maximum signals to drain per iteration — smaller chunks reduce memory
+    # pressure and per-batch processing time on constrained environments.
+    _BATCH_LIMIT = 200
+
     def _process_loop(self):
-        """Continuously drains signal queue, normalizes, filters, correlates, routes."""
+        """Continuously drains signal queue, normalizes, filters, correlates, routes.
+
+        Updates ``self._last_heartbeat`` every iteration so the watchdog can
+        detect a stalled / killed thread and restart it.
+        """
         buffer = []
-        logger.warning("_process_loop STARTED — thread alive")
+        logger.warning(
+            "_process_loop STARTED — thread alive (restarts=%d)",
+            self._process_loop_restarts,
+        )
 
         while not self._stop.is_set():
           try:
-            # Drain queue
+            # Update heartbeat for watchdog
+            with self._heartbeat_lock:
+                self._last_heartbeat = time.monotonic()
+
+            # Drain queue (capped to _BATCH_LIMIT per iteration)
             drained = 0
-            while self._signal_queue and drained < 500:
+            while self._signal_queue and drained < self._BATCH_LIMIT:
                 try:
                     sig = self._signal_queue.popleft()
                     buffer.append(sig)
@@ -318,28 +359,50 @@ class StreamingSession:
             except Exception as e:
                 logger.warning("store signal error: %s", e)
 
-            # Filter — nano agents, correlate, create tasks
+            # ------ Pipeline (isolated) ------
+            kept = []
+            total_dropped = len(buffer)
+            findings = []
+            new_findings = []
+
             try:
                 pipeline_result = run_pipeline(normalized)
-                routing_result = route_signals(normalized, pipeline_result["decisions"])
-                kept = routing_result["kept"]
-                total_dropped = pipeline_result["suppressed_count"] + pipeline_result["deduped_count"] + routing_result["dropped_count"]
+            except Exception as e:
+                logger.error("run_pipeline crashed: %s", e, exc_info=True)
+                pipeline_result = None
 
-                for d in pipeline_result.get("decisions", []):
-                    self.store.add_decision({
-                        "filter_name": d.filter_name, "outcome": d.outcome,
-                        "reason": d.reason_code, "signal_id": str(d.signal_id)[:8],
-                        "evidence": d.evidence,
-                    })
-                    if d.outcome == "escalate":
-                        self._log_event("nano", "escalate", {
-                            "filter": d.filter_name, "signal_id": str(d.signal_id)[:8],
-                            "reason": d.reason_code, "evidence": d.evidence,
+            if pipeline_result is not None:
+                try:
+                    routing_result = route_signals(normalized, pipeline_result["decisions"])
+                    kept = routing_result["kept"]
+                    total_dropped = (pipeline_result["suppressed_count"]
+                                     + pipeline_result["deduped_count"]
+                                     + routing_result["dropped_count"])
+
+                    for d in pipeline_result.get("decisions", []):
+                        self.store.add_decision({
+                            "filter_name": d.filter_name, "outcome": d.outcome,
+                            "reason": d.reason_code, "signal_id": str(d.signal_id)[:8],
+                            "evidence": d.evidence,
                         })
-                        self._push_escalation(d)
+                        if d.outcome == "escalate":
+                            self._log_event("nano", "escalate", {
+                                "filter": d.filter_name, "signal_id": str(d.signal_id)[:8],
+                                "reason": d.reason_code, "evidence": d.evidence,
+                            })
+                            self._push_escalation(d)
+                except Exception as e:
+                    logger.error("route_signals crashed: %s", e, exc_info=True)
 
-                findings = correlate(kept) if len(kept) >= 2 else []
+            # ------ Correlate (isolated) ------
+            if len(kept) >= 2:
+                try:
+                    findings = correlate(kept)
+                except Exception as e:
+                    logger.error("correlate crashed: %s", e, exc_info=True)
+                    findings = []
 
+            try:
                 for f in findings:
                     self.store.add_finding({
                         "finding_type": f.finding_type, "severity": f.severity,
@@ -354,7 +417,6 @@ class StreamingSession:
                     })
 
                 now_ts = time.monotonic()
-                new_findings = []
                 for f in findings:
                     key = f"{f.finding_type}:{','.join(sorted(f.namespaces))}"
                     last_seen = self._finding_cooldown.get(key, 0)
@@ -362,10 +424,7 @@ class StreamingSession:
                         new_findings.append(f)
                         self._finding_cooldown[key] = now_ts
             except Exception as e:
-                logger.warning("pipeline error: %s", e)
-                kept = []
-                total_dropped = len(buffer)
-                new_findings = []
+                logger.error("finding bookkeeping crashed: %s", e, exc_info=True)
 
             # Create reasoning tasks from new findings only
             tasks = create_reasoning_tasks(new_findings)
@@ -479,6 +538,44 @@ class StreamingSession:
         except Exception:
             pass
 
+    # ---------- watchdog ----------
+    _WATCHDOG_CHECK_INTERVAL = 30   # seconds between checks
+    _HEARTBEAT_STALE_THRESHOLD = 60  # seconds before declaring thread dead
+
+    def _watchdog_loop(self):
+        """Monitors the process-loop heartbeat; restarts the thread if stale."""
+        logger.info("_watchdog_loop STARTED")
+        while not self._stop.is_set():
+            self._stop.wait(self._WATCHDOG_CHECK_INTERVAL)
+            if self._stop.is_set():
+                break
+
+            restart_reason = None
+            with self._heartbeat_lock:
+                stale = time.monotonic() - self._last_heartbeat
+
+            if stale > self._HEARTBEAT_STALE_THRESHOLD:
+                restart_reason = (
+                    f"heartbeat stale ({stale:.1f}s > {self._HEARTBEAT_STALE_THRESHOLD}s)"
+                )
+            elif self._processor_thread and not self._processor_thread.is_alive():
+                restart_reason = "thread dead (is_alive=False)"
+
+            if restart_reason:
+                self._process_loop_restarts += 1
+                logger.error(
+                    "WATCHDOG: process loop %s — restarting "
+                    "(previous restarts=%d)",
+                    restart_reason, self._process_loop_restarts,
+                )
+                t = threading.Thread(
+                    target=self._process_loop, daemon=True,
+                    name=f"deepfield-processor-r{self._process_loop_restarts}",
+                )
+                self._processor_thread = t
+                t.start()
+        logger.info("_watchdog_loop EXITED")
+
     def _log_event(self, tier: str, action: str, data: dict):
         from datetime import datetime, timezone
         event = {
@@ -498,6 +595,12 @@ class StreamingSession:
         "cross_cluster_correlation": "correlation",
         "fleet_summary": "rca",
         "incident_analysis": "incident",
+        # Micro-tier task types
+        "classify_signal": "classify_signal",
+        "correlate_findings": "correlate_findings",
+        "suggest_remediation": "suggest_remediation",
+        "explain_signal": "explain_signal",
+        "filter_noise": "filter_noise",
     }
 
     def _do_inference(self, task, model):

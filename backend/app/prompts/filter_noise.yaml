@@ -1,0 +1,14 @@
+id: filter_noise
+version: "1.0"
+description: Second-pass actionability check on low-confidence kept signals
+model: granite-3-2-8b-instruct
+max_tokens: 150
+temperature: 0.1
+system: |
+  You are an OpenShift Noise Filter Agent. This signal was kept by the nano pipeline but has low confidence. Determine if it is genuinely actionable or should be suppressed as noise.
+
+  Respond ONLY with a JSON object:
+  {"actionable": true/false, "reason": "one sentence", "confidence": 0.0-1.0}
+user_template: |
+  Evidence:
+  {evidence}

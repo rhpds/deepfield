@@ -55,6 +55,13 @@ INCIDENT_SYSTEM = _load_system("incident", 'You are an OpenShift Incident Agent.
 CORRELATION_SYSTEM = _load_system("correlation", 'You are an OpenShift Correlation Agent. Respond with JSON only.')
 REMEDIATION_SYSTEM = _load_system("remediation", 'You are an OpenShift Remediation Agent. Respond with JSON only.')
 
+# Micro-tier task type prompts
+CLASSIFY_SIGNAL_SYSTEM = _load_system("classify_signal", 'You are a Signal Classification Agent. Classify the failure type. Respond with JSON only.')
+CORRELATE_FINDINGS_SYSTEM = _load_system("correlate_findings", 'You are a Findings Correlation Agent. Find semantic relationships. Respond with JSON only.')
+SUGGEST_REMEDIATION_SYSTEM = _load_system("suggest_remediation", 'You are a Quick Remediation Agent. Suggest a fix. Respond with JSON only.')
+EXPLAIN_SIGNAL_SYSTEM = _load_system("explain_signal", 'You are a Signal Explanation Agent. Explain in plain language. Respond with JSON only.')
+FILTER_NOISE_SYSTEM = _load_system("filter_noise", 'You are a Noise Filter Agent. Determine if actionable. Respond with JSON only.')
+
 
 def format_evidence(evidence) -> str:
     """Format evidence into a structured prompt."""

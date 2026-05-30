@@ -100,15 +100,25 @@ def _build_evidence_block(f: CandidateFinding) -> dict:
 
 def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTask]:
     import json
-    from app.agents.prompts import RCA_SYSTEM, TRIAGE_SYSTEM, CORRELATION_SYSTEM
+    from app.agents.prompts import (
+        RCA_SYSTEM, TRIAGE_SYSTEM, CORRELATION_SYSTEM,
+        CLASSIFY_SIGNAL_SYSTEM, CORRELATE_FINDINGS_SYSTEM,
+        SUGGEST_REMEDIATION_SYSTEM, EXPLAIN_SIGNAL_SYSTEM,
+        FILTER_NOISE_SYSTEM,
+    )
 
     tasks = []
+    # Track namespaces across findings for correlate_findings trigger
+    namespace_findings: dict = {}
+
     for f in findings:
         if f.severity == "info":
             continue
 
         model = _select_model_for_finding(f)
+        evidence_block = _build_evidence_block(f)
 
+        # --- Primary task (existing logic) ---
         if f.finding_type == "cross_cluster_correlation":
             task_type = "cross_cluster_correlation"
             system_prompt = CORRELATION_SYSTEM
@@ -119,7 +129,6 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
             task_type = "summarize_finding"
             system_prompt = TRIAGE_SYSTEM
 
-        evidence_block = _build_evidence_block(f)
         prompt = f"{system_prompt}\n\nEvidence:\n{json.dumps(evidence_block, indent=2)}"
 
         tasks.append(ReasoningTask(
@@ -135,5 +144,119 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
                 "tier": "macro" if f.severity in ("critical", "high") else "micro",
             },
         ))
+
+        # --- classify_signal: no failure_class after nano enrichment ---
+        signals = f.evidence.get("signals", [])
+        has_unclassified = any(
+            not s.get("failure_class") for s in signals
+        )
+        if has_unclassified:
+            micro_model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
+            tasks.append(ReasoningTask(
+                task_id=uuid4(),
+                finding_id=f.finding_id,
+                task_type="classify_signal",
+                model_preference=micro_model,
+                prompt=f"{CLASSIFY_SIGNAL_SYSTEM}\n\nEvidence:\n{json.dumps(evidence_block, indent=2)}",
+                context={
+                    "finding_type": f.finding_type,
+                    "severity": f.severity,
+                    "signal_count": len(f.signal_ids),
+                    "tier": "micro",
+                },
+            ))
+
+        # --- suggest_remediation: medium-severity findings ---
+        if f.severity == "medium":
+            micro_model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
+            tasks.append(ReasoningTask(
+                task_id=uuid4(),
+                finding_id=f.finding_id,
+                task_type="suggest_remediation",
+                model_preference=micro_model,
+                prompt=f"{SUGGEST_REMEDIATION_SYSTEM}\n\nEvidence:\n{json.dumps(evidence_block, indent=2)}",
+                context={
+                    "finding_type": f.finding_type,
+                    "severity": f.severity,
+                    "signal_count": len(f.signal_ids),
+                    "tier": "micro",
+                },
+            ))
+
+        # --- explain_signal: all escalated signals (findings with escalate evidence) ---
+        has_escalation = any(
+            s.get("evidence", {}).get("escalated") or s.get("outcome") == "escalate"
+            for s in signals
+        )
+        if has_escalation or f.severity in ("high", "critical"):
+            micro_model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
+            tasks.append(ReasoningTask(
+                task_id=uuid4(),
+                finding_id=f.finding_id,
+                task_type="explain_signal",
+                model_preference=micro_model,
+                prompt=f"{EXPLAIN_SIGNAL_SYSTEM}\n\nEvidence:\n{json.dumps(evidence_block, indent=2)}",
+                context={
+                    "finding_type": f.finding_type,
+                    "severity": f.severity,
+                    "signal_count": len(f.signal_ids),
+                    "tier": "micro",
+                },
+            ))
+
+        # --- filter_noise: low-confidence kept signals ---
+        low_confidence_signals = [
+            s for s in signals
+            if s.get("confidence", 1.0) < 0.5
+        ]
+        if low_confidence_signals and f.severity == "low":
+            micro_model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
+            tasks.append(ReasoningTask(
+                task_id=uuid4(),
+                finding_id=f.finding_id,
+                task_type="filter_noise",
+                model_preference=micro_model,
+                prompt=f"{FILTER_NOISE_SYSTEM}\n\nEvidence:\n{json.dumps(evidence_block, indent=2)}",
+                context={
+                    "finding_type": f.finding_type,
+                    "severity": f.severity,
+                    "signal_count": len(f.signal_ids),
+                    "tier": "micro",
+                },
+            ))
+
+        # Track namespaces for correlate_findings
+        for ns in f.namespaces:
+            namespace_findings.setdefault(ns, []).append(f)
+
+    # --- correlate_findings: 2+ findings share a namespace ---
+    correlated_pairs = set()
+    for ns, ns_findings in namespace_findings.items():
+        if len(ns_findings) >= 2:
+            pair_key = tuple(sorted(str(ff.finding_id) for ff in ns_findings[:2]))
+            if pair_key in correlated_pairs:
+                continue
+            correlated_pairs.add(pair_key)
+
+            combined_evidence = {
+                "shared_namespace": ns,
+                "findings": [_build_evidence_block(ff) for ff in ns_findings[:4]],
+            }
+            micro_model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
+            tasks.append(ReasoningTask(
+                task_id=uuid4(),
+                finding_id=ns_findings[0].finding_id,
+                task_type="correlate_findings",
+                model_preference=micro_model,
+                prompt=f"{CORRELATE_FINDINGS_SYSTEM}\n\nEvidence:\n{json.dumps(combined_evidence, indent=2)}",
+                context={
+                    "finding_type": "correlate_findings",
+                    "severity": max((ff.severity for ff in ns_findings), key=lambda s: ["info", "low", "medium", "high", "critical"].index(s)),
+                    "signal_count": sum(len(ff.signal_ids) for ff in ns_findings),
+                    "tier": "micro",
+                    "namespace": ns,
+                    "finding_count": len(ns_findings),
+                },
+            ))
 
     return tasks

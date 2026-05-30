@@ -26,6 +26,12 @@ TASK_TO_TIER = {
     "cross_cluster_correlation": "macro",
     "fleet_summary": "macro",
     "capacity_estimate": "macro",
+    # Micro-tier task types (Xeon 6 CPU — fast, low-token)
+    "classify_signal": "micro",
+    "correlate_findings": "micro",
+    "suggest_remediation": "micro",
+    "explain_signal": "micro",
+    "filter_noise": "micro",
 }
 
 # Model preference → actual endpoint
