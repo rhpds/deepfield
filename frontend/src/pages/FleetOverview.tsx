@@ -173,12 +173,13 @@ export default function FleetOverview() {
   const compressionRatio = m?.compression_ratio;
   const inFlight = m?.inference_in_flight ?? 0;
 
-  /* Funnel values */
-  const rawSignals = m?.raw_signals ?? 0;
-  const retained = m?.retained ?? 0;
-  const findingsCount = m?.findings ?? 0;
-  const reasoningTasks = m?.reasoning_tasks ?? 0;
-  const inferenceCompleted = m?.inference_completed ?? 0;
+  /* Funnel values — use cumulative totals, not window metrics */
+  const t = live?.totals;
+  const rawSignals = t?.raw_signals ?? 0;
+  const retained = rawSignals - (t?.dropped ?? 0);
+  const findingsCount = t?.findings ?? 0;
+  const reasoningTasks = t?.reasoning_tasks ?? 0;
+  const inferenceCompleted = t?.inference_calls ?? 0;
 
   const funnelSteps = [
     { label: 'Raw', value: rawSignals, color: '#6A6E73' },
