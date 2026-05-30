@@ -32,7 +32,7 @@ interface ObsCluster {
 
 interface ObsSignal {
   signal_id: string;
-  cluster_id: string;
+  cluster: string;
   namespace: string;
   resource_kind: string;
   signal_type: string;
@@ -289,52 +289,44 @@ export default function FleetOverview() {
       </div>
 
       {/* ============================================================ */}
-      {/*  3. Nano-Agent Grid                                           */}
+      {/*  3. Micro-Agents (Nano — Deterministic Filters)               */}
       {/* ============================================================ */}
       <div className="border border-[#333] rounded-xl p-4">
-        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
-          Nano-Agent Grid
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+            Micro-Agents <span className="text-[#0071C5]">· Deterministic Filters</span>
+          </div>
+          <button onClick={() => navigate('/pipeline')} className="text-xs text-[#0071C5] hover:text-white transition">
+            View Pipeline →
+          </button>
         </div>
         {agents === null ? (
-          <div className="animate-pulse space-y-3">
-            {[1,2].map(i => (
-              <div key={i} className="bg-[#212121] rounded-lg h-16" />
-            ))}
+          <div className="animate-pulse grid grid-cols-2 gap-3">
+            {[1,2,3,4].map(i => <div key={i} className="bg-[#212121] rounded-lg h-20" />)}
           </div>
         ) : agents.length === 0 ? (
           <div className="text-sm text-[#6A6E73]">Pipeline initializing...</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {agents.map((agent) => {
-              const escRate =
-                agent.evaluations > 0
-                  ? (agent.escalations / agent.evaluations) * 100
-                  : 0;
-              const dotColor =
-                escRate < 5
-                  ? '#3E8635'
-                  : escRate < 20
-                    ? '#F0AB00'
-                    : '#C9190B';
-
+              const escRate = agent.evaluations > 0 ? (agent.escalations / agent.evaluations) * 100 : 0;
+              const dotColor = escRate < 5 ? '#3E8635' : escRate < 20 ? '#F0AB00' : '#C9190B';
               return (
-                <div
-                  key={agent.name}
-                  className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4 flex items-center gap-3"
+                <div key={agent.name}
+                  className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 cursor-pointer hover:border-[#555] transition-colors"
+                  onClick={() => navigate('/pipeline')}
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: dotColor }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-white truncate">
-                      {agent.name}
-                    </div>
-                    <div className="text-xs text-[#6A6E73] mt-0.5">
-                      {agent.evaluations.toLocaleString()} evals
-                      <span className="mx-1">&middot;</span>
-                      {escRate.toFixed(1)}% escalation
-                    </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dotColor }} />
+                    <span className="text-xs font-medium text-white truncate">{agent.name.replace('Agent', '')}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold text-white tabular-nums" style={{ fontFamily: 'Red Hat Display' }}>{agent.evaluations.toLocaleString()}</span>
+                    <span className="text-[10px] text-[#6A6E73]">evals</span>
+                  </div>
+                  <div className="text-[10px] tabular-nums mt-1">
+                    <span style={{ color: dotColor }}>{escRate.toFixed(0)}% esc</span>
+                    <span className="text-[#6A6E73]"> · {agent.escalations} escalated</span>
                   </div>
                 </div>
               );
@@ -344,33 +336,44 @@ export default function FleetOverview() {
       </div>
 
       {/* ============================================================ */}
-      {/*  4. Active Models — horizontal strip                          */}
+      {/*  4. Macro-Agents (LLM Models — Inference)                     */}
       {/* ============================================================ */}
       <div className="border border-[#333] rounded-xl p-4">
-        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
-          Active Models
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+            Macro-Agents <span className="text-[#EE0000]">· LLM Inference</span>
+          </div>
+          <button onClick={() => navigate('/llm')} className="text-xs text-[#EE0000] hover:text-white transition">
+            View LLM Observatory →
+          </button>
         </div>
         {modelEntries.length === 0 ? (
-          <div className="text-sm text-[#6A6E73]">{'—'}</div>
+          <div className="text-sm text-[#6A6E73]">No models active — waiting for escalated signals</div>
         ) : (
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {modelEntries.map(([model, stats]) => (
-              <div
-                key={model}
-                className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 min-w-[180px] flex-shrink-0"
-              >
-                <div className="text-xs font-mono text-[#6A6E73] truncate mb-1">
-                  {model}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {modelEntries.map(([model, stats]) => {
+              const isGaudi = !model.toLowerCase().includes('cpu') && !model.toLowerCase().includes('xeon');
+              const laneColor = isGaudi ? '#EE0000' : '#0071C5';
+              const laneLabel = isGaudi ? 'Gaudi 3' : 'Xeon 6';
+              return (
+                <div key={model}
+                  className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 cursor-pointer hover:border-[#555] transition-colors"
+                  onClick={() => navigate('/llm')}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${laneColor}20`, color: laneColor }}>{laneLabel}</span>
+                    <span className="text-xs text-[#6A6E73] truncate font-mono">{model.replace(/_/g, ' ')}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold text-white tabular-nums" style={{ fontFamily: 'Red Hat Display' }}>{stats.calls}</span>
+                    <span className="text-[10px] text-[#6A6E73]">calls</span>
+                  </div>
+                  <div className="text-[10px] text-[#F0AB00] tabular-nums mt-1">
+                    {stats.avg_tps} tok/s · {stats.avg_latency}ms
+                  </div>
                 </div>
-                <div className="text-lg font-bold text-white tabular-nums">
-                  {stats.calls}
-                  <span className="text-[10px] text-[#6A6E73] ml-1">calls</span>
-                </div>
-                <div className="text-xs text-orange-400 tabular-nums mt-0.5">
-                  {stats.avg_tps} tok/s &middot; {stats.avg_latency}ms
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -394,9 +397,9 @@ export default function FleetOverview() {
           <div className="space-y-1">
             {recentSignals.map((sig) => (
               <div
-                key={sig.signal_id ?? `${sig.cluster_id}-${sig.timestamp}-${sig.signal_type}`}
+                key={sig.signal_id ?? `${sig.cluster}-${sig.timestamp}-${sig.signal_type}`}
                 className="flex items-center gap-3 bg-[#1a1a1a] rounded-lg px-3 py-2 text-xs cursor-pointer hover:bg-[#252525]"
-                onClick={() => navigate(`/cluster/${sig.cluster_id}`)}
+                onClick={() => navigate(`/cluster/${sig.cluster}`)}
               >
                 {/* Severity badge */}
                 <span
@@ -421,7 +424,7 @@ export default function FleetOverview() {
 
                 {/* Cluster */}
                 <span className="text-[#6A6E73] truncate max-w-[120px]">
-                  {sig.cluster_id}
+                  {sig.cluster}
                 </span>
 
                 {/* Timestamp */}
@@ -438,8 +441,8 @@ export default function FleetOverview() {
       {/*  Cluster cards (clickable navigation)                         */}
       {/* ============================================================ */}
       <div className="border border-[#333] rounded-xl p-4">
-        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
-          Cluster Detail
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">Clusters</div>
         </div>
         {clusters === null ? (
           <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -461,34 +464,36 @@ export default function FleetOverview() {
                 className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4 cursor-pointer hover:border-[#555] transition-colors"
                 onClick={() => navigate(`/cluster/${cl.cluster_id}`)}
               >
-                <div className="text-sm font-semibold text-white mb-2 truncate">
-                  {cl.cluster_id}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-semibold text-white">{cl.cluster_id}</span>
+                  <span className="text-[10px] text-[#6A6E73]">{cl.last_scan ? relativeTime(cl.last_scan) : ''}</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <div className="text-lg font-bold text-white tabular-nums">
-                      {cl.total_pods}
+                <div className="grid grid-cols-5 gap-2 text-center mb-3">
+                  {[
+                    { v: cl.total_pods, l: 'Pods', c: 'text-white' },
+                    { v: cl.pods_running, l: 'Running', c: 'text-[#3E8635]' },
+                    { v: cl.pods_pending, l: 'Pending', c: 'text-[#F0AB00]' },
+                    { v: cl.pods_crashloop, l: 'Crash', c: 'text-[#C9190B]' },
+                    { v: cl.total_nodes, l: 'Nodes', c: 'text-white' },
+                  ].map(({ v, l, c }) => (
+                    <div key={l}>
+                      <div className={`text-base font-bold tabular-nums ${c}`} style={{ fontFamily: 'Red Hat Display' }}>{v ?? 0}</div>
+                      <div className="text-[8px] text-[#6A6E73] uppercase">{l}</div>
                     </div>
-                    <div className="text-[9px] text-[#6A6E73]">Pods</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-white tabular-nums">
-                      {cl.total_nodes}
-                    </div>
-                    <div className="text-[9px] text-[#6A6E73]">Nodes</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-white tabular-nums">
-                      {cl.total_events_warning}
-                    </div>
-                    <div className="text-[9px] text-[#6A6E73]">Warnings</div>
-                  </div>
+                  ))}
                 </div>
-                {cl.last_scan && (
-                  <div className="text-[9px] text-[#6A6E73] mt-2">
-                    Last scan: {relativeTime(cl.last_scan)}
+                {/* Pod health bar */}
+                {cl.total_pods > 0 && (
+                  <div className="h-1.5 flex rounded-full overflow-hidden gap-px">
+                    <div style={{ width: `${((cl.pods_running ?? 0) / cl.total_pods) * 100}%`, backgroundColor: '#3E8635' }} />
+                    <div style={{ width: `${((cl.pods_pending ?? 0) / cl.total_pods) * 100}%`, backgroundColor: '#F0AB00' }} />
+                    <div style={{ width: `${(((cl.pods_failed ?? 0) + (cl.pods_crashloop ?? 0)) / cl.total_pods) * 100}%`, backgroundColor: '#C9190B' }} />
                   </div>
                 )}
+                {cl.total_events_warning > 0 && (
+                  <div className="text-[10px] text-[#F0AB00] mt-2">{cl.total_events_warning} warning events</div>
+                )}
+                <div className="text-[10px] text-[#0071C5] mt-1">Click for namespace detail →</div>
               </div>
             ))}
           </div>
