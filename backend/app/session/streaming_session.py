@@ -145,7 +145,7 @@ class StreamingSession:
 
         # Heartbeat — updated every process-loop iteration
         self._last_heartbeat = 0.0
-        self._last_stats_flush = 0.0
+        self._last_stats_flush = time.monotonic()
         self._heartbeat_lock = threading.Lock()
         self._process_loop_restarts = 0
 
@@ -269,7 +269,7 @@ class StreamingSession:
 
     # Maximum signals to drain per iteration — smaller chunks reduce memory
     # pressure and per-batch processing time on constrained environments.
-    _BATCH_LIMIT = 200
+    _BATCH_LIMIT = 50
 
     def _process_loop(self):
         """Continuously drains signal queue, normalizes, filters, correlates, routes.
@@ -313,8 +313,8 @@ class StreamingSession:
                 self._window_tps_sum = 0
                 self._window_inference = 0
 
-            # Persist stats to DB every 60 seconds
-            if now - self._last_stats_flush >= 60.0:
+            # Persist stats to DB every 10 seconds
+            if now - self._last_stats_flush >= 10.0:
                 self._persist_stats()
                 self._last_stats_flush = now
 
@@ -526,23 +526,8 @@ class StreamingSession:
                 self._stop.wait(1.0)
 
     def _push_escalation(self, decision):
-        """Push escalated findings to StarGate and Launchpad (non-blocking, fire-and-forget)."""
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                if decision.filter_name == "LaunchpadSessionAgent" and decision.reason_code == "lab_failed":
-                    from app.integrations.event_publisher import suggest_remediation
-                    session_id = decision.evidence.get("resource_name", "")
-                    if session_id:
-                        asyncio.ensure_future(suggest_remediation(
-                            session_id=session_id,
-                            action="reset",
-                            reason=f"DeepField detected lab failure: {decision.reason_code}",
-                            evidence=decision.evidence,
-                        ))
-        except Exception:
-            pass
+        """Log escalation for cross-product visibility. Actual push happens via Kafka/webhook."""
+        pass
 
     # ---------- watchdog ----------
     _WATCHDOG_CHECK_INTERVAL = 30   # seconds between checks
