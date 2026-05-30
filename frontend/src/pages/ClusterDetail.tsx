@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTimeRange } from '../components/TimeRangeContext';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -64,6 +65,7 @@ function relativeTime(ts: string): string {
 export default function ClusterDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { since } = useTimeRange();
 
   const [cluster, setCluster] = useState<ClusterData | null>(null);
   const [signals, setSignals] = useState<ObsSignal[] | null>(null);
@@ -110,10 +112,17 @@ export default function ClusterDetail() {
     return () => { cancelled = true; clearInterval(poll); };
   }, [id]);
 
+  /* ----- Filter signals by time range ----- */
+  const cutoff = since();
+  const filteredSignals = (signals ?? []).filter(s => {
+    const ts = s.timestamp;
+    return ts ? new Date(ts).getTime() >= cutoff : true;
+  });
+
   /* ----- Derived ----- */
   const nsEntries = cluster ? Object.entries(cluster.namespaces ?? {}) : [];
   const maxNsCount = Math.max(...nsEntries.map(([, c]) => c), 1);
-  const clusterSignals = (signals ?? []).slice(-15).reverse();
+  const clusterSignals = filteredSignals.slice(-15).reverse();
 
   /* Pod status bar */
   const totalPods = cluster?.total_pods ?? 0;

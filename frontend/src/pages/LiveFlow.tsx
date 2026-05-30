@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTimeRange } from '../components/TimeRangeContext';
 
 interface AgentEvent {
   ts: string;
@@ -51,6 +52,8 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 export default function LiveFlow() {
+  const { since } = useTimeRange();
+
   const [live, setLive] = useState<LiveState | null>(null);
   const latestSSE = useRef<LiveState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,7 +77,12 @@ export default function LiveFlow() {
   }, [flushSSE]);
 
   const m = live?.metrics ?? {};
-  const events = (live?.agent_log ?? []).slice(-30).reverse();
+  const cutoff = since();
+  const filteredLog = (live?.agent_log ?? []).filter(ev => {
+    const ts = ev.ts;
+    return ts ? new Date(ts).getTime() >= cutoff : true;
+  });
+  const events = filteredLog.slice(-30).reverse();
 
   const stageValues = [
     m.raw_signals ?? 0,

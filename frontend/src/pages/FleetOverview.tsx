@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTimeRange } from '../components/TimeRangeContext';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -82,6 +83,7 @@ function relativeTime(ts: string): string {
 
 export default function FleetOverview() {
   const navigate = useNavigate();
+  const { since } = useTimeRange();
 
   /* SSE live state */
   const [live, setLive] = useState<StreamState | null>(null);
@@ -200,7 +202,12 @@ export default function FleetOverview() {
   const macroModels = modelEntries.filter(([name]) => !isMicroModel(name));
 
   /* Recent signals — last 10 */
-  const recentSignals = (signals ?? []).slice(-10).reverse();
+  const cutoff = since();
+  const filteredSignals = (signals ?? []).filter(s => {
+    const ts = s.timestamp;
+    return ts ? new Date(ts).getTime() >= cutoff : true;
+  });
+  const recentSignals = filteredSignals.slice(-10).reverse();
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">

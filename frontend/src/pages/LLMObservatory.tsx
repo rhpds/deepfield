@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTimeRange } from '../components/TimeRangeContext';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -213,6 +214,8 @@ function RemediationPanel({ output, finding }: { output: string; finding: Record
 /* ------------------------------------------------------------------ */
 
 export default function LLMObservatory() {
+  const { since } = useTimeRange();
+
   /* SSE live state */
   const [sseModels, setSseModels] = useState<Record<string, ModelStats>>({});
 
@@ -291,8 +294,15 @@ export default function LLMObservatory() {
   const gaudiAvgLatency = laneTotals.gaudi3.count > 0 ? Math.round(laneTotals.gaudi3.latencySum / laneTotals.gaudi3.count) : 0;
   const xeonAvgLatency = laneTotals.xeon6.count > 0 ? Math.round(laneTotals.xeon6.latencySum / laneTotals.xeon6.count) : 0;
 
+  /* ----- Filter inferences by time range ----- */
+  const cutoff = since();
+  const filteredInferences = inferences.filter(inf => {
+    const ts = inf.timestamp || inf._ts;
+    return ts ? new Date(ts).getTime() >= cutoff : true;
+  });
+
   /* ----- Recent inferences, newest first ----- */
-  const recentInferences = inferences.slice().reverse();
+  const recentInferences = filteredInferences.slice().reverse();
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
@@ -445,7 +455,7 @@ export default function LLMObservatory() {
       {/* ============================================================ */}
       <div className="border border-[#333] rounded-xl p-4">
         <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
-          Recent Inferences ({inferences.length})
+          Recent Inferences ({filteredInferences.length})
         </div>
         {recentInferences.length === 0 ? (
           <div className="text-sm text-[#6A6E73]">No inferences yet. Start a session to see inference logs.</div>

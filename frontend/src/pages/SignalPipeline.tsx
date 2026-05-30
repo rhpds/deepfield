@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTimeRange } from '../components/TimeRangeContext';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -53,6 +54,8 @@ function outcomeStyle(outcome: string) {
 /* ------------------------------------------------------------------ */
 
 export default function SignalPipeline() {
+  const { since } = useTimeRange();
+
   /* SSE live state */
   const [metrics, setMetrics] = useState<StreamMetrics>({});
   const [modelStats, setModelStats] = useState<Record<string, { calls: number }>>({});
@@ -124,6 +127,13 @@ export default function SignalPipeline() {
     return () => { cancelled = true; clearInterval(poll); };
   }, []);
 
+  /* ----- Filter decisions by time range ----- */
+  const cutoff = since();
+  const filteredDecisions = decisions.filter(d => {
+    const ts = d.timestamp;
+    return ts ? new Date(ts).getTime() >= cutoff : true;
+  });
+
   /* ----- Derived ----- */
   const agentEntries = agents ? Object.entries(agents) : [];
   const rawSignals = metrics.raw_signals ?? 0;
@@ -141,7 +151,7 @@ export default function SignalPipeline() {
     { label: 'Insights', value: `${inferenceCompleted.toLocaleString()} completed` },
   ];
 
-  const recentDecisions = decisions.slice(-20).reverse();
+  const recentDecisions = filteredDecisions.slice(-20).reverse();
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
@@ -217,7 +227,7 @@ export default function SignalPipeline() {
                 : 0;
 
               const isSelected = selectedAgent === name;
-              const agentDecisions = decisions.filter(d => d.filter_name === name);
+              const agentDecisions = filteredDecisions.filter(d => d.filter_name === name);
 
               return (
                 <div key={name}>
