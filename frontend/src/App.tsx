@@ -1,4 +1,5 @@
 import { Routes, Route, NavLink, Outlet } from 'react-router-dom';
+import { TimeRangeProvider, TimeRangePicker } from './components/TimeRangeContext';
 import FleetOverview from './pages/FleetOverview';
 import SignalPipeline from './pages/SignalPipeline';
 import LiveFlow from './pages/LiveFlow';
@@ -39,6 +40,7 @@ function AppLayout() {
                 </NavLink>
               ))}
             </nav>
+            <TimeRangePicker />
           </div>
         </div>
       </header>
@@ -65,16 +67,18 @@ function AppLayout() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route path="/" element={<FleetOverview />} />
-        <Route path="/pipeline" element={<SignalPipeline />} />
-        <Route path="/live" element={<LiveFlow />} />
-        <Route path="/llm" element={<LLMObservatory />} />
-        <Route path="/cluster/:id" element={<ClusterDetail />} />
-        <Route path="/incidents" element={<Incidents />} />
-        <Route path="/simulator" element={<LivePanel />} />
-      </Route>
-    </Routes>
+    <TimeRangeProvider>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<FleetOverview />} />
+          <Route path="/pipeline" element={<SignalPipeline />} />
+          <Route path="/live" element={<LiveFlow />} />
+          <Route path="/llm" element={<LLMObservatory />} />
+          <Route path="/cluster/:id" element={<ClusterDetail />} />
+          <Route path="/incidents" element={<Incidents />} />
+          <Route path="/simulator" element={<LivePanel />} />
+        </Route>
+      </Routes>
+    </TimeRangeProvider>
   );
 }

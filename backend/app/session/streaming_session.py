@@ -141,7 +141,7 @@ class StreamingSession:
         self._inference_worker = None
         self._watchdog_thread = None
         self._inference_pool = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # Heartbeat — updated every process-loop iteration
         self._last_heartbeat = 0.0
@@ -283,12 +283,17 @@ class StreamingSession:
             self._process_loop_restarts,
         )
 
+        _phase = "init"
+        _iter_count = 0
         while not self._stop.is_set():
           try:
+            _iter_count += 1
+            _phase = "heartbeat"
             # Update heartbeat for watchdog
             with self._heartbeat_lock:
                 self._last_heartbeat = time.monotonic()
 
+            _phase = "drain"
             # Drain queue (capped to _BATCH_LIMIT per iteration)
             drained = 0
             while self._signal_queue and drained < self._BATCH_LIMIT:
@@ -299,6 +304,9 @@ class StreamingSession:
                 except IndexError:
                     break
 
+            if drained > 0:
+                logger.warning("DRAIN: %d signals, buffer=%d", drained, len(buffer))
+            _phase = "snapshot"
             # Always tick snapshots even when idle
             now = time.monotonic()
             if now - self._last_snapshot >= 2.0:
@@ -319,9 +327,11 @@ class StreamingSession:
                 self._last_stats_flush = now
 
             if not buffer:
+                _phase = "idle"
                 self._stop.wait(0.05)
                 continue
 
+            _phase = "normalize"
             # Filter by target namespaces if set (for scoped demo sessions)
             if self.target_namespaces:
                 buffer = [s for s in buffer if any(
@@ -365,6 +375,7 @@ class StreamingSession:
             except Exception as e:
                 logger.warning("store signal error: %s", e)
 
+            _phase = "pipeline"
             # ------ Pipeline (isolated) ------
             kept = []
             total_dropped = len(buffer)
@@ -400,6 +411,7 @@ class StreamingSession:
                 except Exception as e:
                     logger.error("route_signals crashed: %s", e, exc_info=True)
 
+            _phase = "correlate"
             # ------ Correlate (isolated) ------
             if len(kept) >= 2:
                 try:
@@ -493,11 +505,12 @@ class StreamingSession:
                     self._ema["projected_clusters"] = self._ema["projected_clusters"] * (1 - a) + raw_projected * a
                 self.metrics["projected_clusters"] = int(self._ema["projected_clusters"])
 
+            _phase = "done"
             buffer.clear()
             self._stop.wait(0.05)
 
           except BaseException as e:
-            logger.error("Process loop error (recovering): %s", e, exc_info=True)
+            logger.error("Process loop error at phase=%s iter=%d: %s", _phase, _iter_count, e, exc_info=True)
             buffer.clear()
             self._stop.wait(1)
 
@@ -597,11 +610,14 @@ class StreamingSession:
             with self._heartbeat_lock:
                 stale = time.monotonic() - self._last_heartbeat
 
+            thread_alive = self._processor_thread.is_alive() if self._processor_thread else False
+
             if stale > self._HEARTBEAT_STALE_THRESHOLD:
                 restart_reason = (
-                    f"heartbeat stale ({stale:.1f}s > {self._HEARTBEAT_STALE_THRESHOLD}s)"
+                    f"heartbeat stale ({stale:.1f}s > {self._HEARTBEAT_STALE_THRESHOLD}s), "
+                    f"thread.is_alive={thread_alive}"
                 )
-            elif self._processor_thread and not self._processor_thread.is_alive():
+            elif not thread_alive:
                 restart_reason = "thread dead (is_alive=False)"
 
             if restart_reason:
@@ -611,6 +627,12 @@ class StreamingSession:
                     "(previous restarts=%d)",
                     restart_reason, self._process_loop_restarts,
                 )
+                import sys, traceback
+                for thread_id, frame in sys._current_frames().items():
+                    if thread_id != threading.get_ident():
+                        stack = "".join(traceback.format_stack(frame))
+                        if "process_loop" in stack or "deepfield-processor" in stack.lower():
+                            logger.error("STUCK THREAD STACK:\n%s", stack)
                 t = threading.Thread(
                     target=self._process_loop, daemon=True,
                     name=f"deepfield-processor-r{self._process_loop_restarts}",
@@ -765,6 +787,8 @@ class StreamingSession:
                 "agent_log": list(self.agent_log[-30:]),
                 "snapshots": self.snapshots[-20:],
                 "queue_depth": len(self._signal_queue),
+                "processor_alive": self._processor_thread.is_alive() if self._processor_thread else False,
+                "process_loop_restarts": self._process_loop_restarts,
             }
         except Exception:
             return {"session_id": self.session_id, "status": self.status, "metrics": dict(self.metrics), "totals": self.totals, "agent_log": [], "snapshots": [], "model_stats": {}, "live_inference": {}, "queue_depth": 0}
