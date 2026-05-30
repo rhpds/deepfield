@@ -60,6 +60,7 @@ export default function SignalPipeline() {
   /* REST state */
   const [agents, setAgents] = useState<Record<string, AgentStats> | null>(null);
   const [decisions, setDecisions] = useState<AgentDecision[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   /* ----- SSE connection ----- */
   useEffect(() => {
@@ -215,59 +216,82 @@ export default function SignalPipeline() {
                 ? (stats.escalated / stats.total_evaluated) * 100
                 : 0;
 
+              const isSelected = selectedAgent === name;
+              const agentDecisions = decisions.filter(d => d.filter_name === name);
+
               return (
-                <div
-                  key={name}
-                  className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: escalationColor(escRate) }}
-                    />
-                    <span className="text-sm font-semibold text-white truncate">{name}</span>
-                    <span className="text-xs text-[#6A6E73] ml-auto">
-                      {escRate.toFixed(1)}% esc
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    <div>
-                      <div
-                        className="text-lg font-bold text-white tabular-nums"
-                        style={{ fontFamily: 'Red Hat Display, sans-serif' }}
-                      >
-                        {stats.total_evaluated.toLocaleString()}
-                      </div>
-                      <div className="text-[9px] text-[#6A6E73] uppercase">Evaluated</div>
+                <div key={name}>
+                  <div
+                    className={`bg-[#212121] border rounded-lg p-4 cursor-pointer transition-colors ${isSelected ? 'border-white/30' : 'border-[#2e2e2e] hover:border-[#555]'}`}
+                    onClick={() => setSelectedAgent(isSelected ? null : name)}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: escalationColor(escRate) }}
+                      />
+                      <span className="text-sm font-semibold text-white truncate">{name}</span>
+                      <span className="text-xs text-[#6A6E73] ml-auto">
+                        {escRate.toFixed(1)}% esc · {agentDecisions.length} decisions
+                      </span>
                     </div>
-                    <div>
-                      <div
-                        className="text-lg font-bold tabular-nums"
-                        style={{ color: '#3E8635', fontFamily: 'Red Hat Display, sans-serif' }}
-                      >
-                        {stats.kept.toLocaleString()}
-                      </div>
-                      <div className="text-[9px] text-[#6A6E73] uppercase">Kept</div>
-                    </div>
-                    <div>
-                      <div
-                        className="text-lg font-bold tabular-nums"
-                        style={{ color: '#6A6E73', fontFamily: 'Red Hat Display, sans-serif' }}
-                      >
-                        {stats.dropped.toLocaleString()}
-                      </div>
-                      <div className="text-[9px] text-[#6A6E73] uppercase">Dropped</div>
-                    </div>
-                    <div>
-                      <div
-                        className="text-lg font-bold tabular-nums"
-                        style={{ color: '#F0AB00', fontFamily: 'Red Hat Display, sans-serif' }}
-                      >
-                        {stats.suppressed.toLocaleString()}
-                      </div>
-                      <div className="text-[9px] text-[#6A6E73] uppercase">Suppressed</div>
+                    <div className="grid grid-cols-5 gap-2 text-center">
+                      {[
+                        { v: stats.total_evaluated, l: 'Evaluated', c: 'text-white' },
+                        { v: stats.escalated, l: 'Escalated', c: 'text-[#EE0000]' },
+                        { v: stats.kept, l: 'Kept', c: 'text-[#3E8635]' },
+                        { v: stats.dropped, l: 'Dropped', c: 'text-[#6A6E73]' },
+                        { v: stats.suppressed, l: 'Suppressed', c: 'text-[#F0AB00]' },
+                      ].map(({ v, l, c }) => (
+                        <div key={l}>
+                          <div className={`text-lg font-bold tabular-nums ${c}`} style={{ fontFamily: 'Red Hat Display' }}>{v.toLocaleString()}</div>
+                          <div className="text-[9px] text-[#6A6E73] uppercase">{l}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
+
+                  {isSelected && (
+                    <div className="mt-2 border border-[#333] rounded-lg p-4 bg-[#1a1a1a] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">{name} — Decision Log</span>
+                        <span className="text-xs text-[#6A6E73]">{agentDecisions.length} decisions</span>
+                      </div>
+
+                      {/* Outcome breakdown */}
+                      <div className="flex gap-3">
+                        {(['keep', 'escalate', 'drop', 'suppress', 'dedupe', 'enrich'] as const).map(outcome => {
+                          const count = agentDecisions.filter(d => d.outcome === outcome).length;
+                          if (count === 0) return null;
+                          const style = outcomeStyle(outcome);
+                          return (
+                            <div key={outcome} className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: style.color, backgroundColor: style.bg }}>{outcome}</span>
+                              <span className="text-xs text-white tabular-nums">{count}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Decision list */}
+                      {agentDecisions.length === 0 ? (
+                        <p className="text-xs text-[#6A6E73]">No recent decisions from this agent</p>
+                      ) : (
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                          {agentDecisions.map((d, i) => {
+                            const style = outcomeStyle(d.outcome);
+                            return (
+                              <div key={`${d.signal_id}-${i}`} className="flex items-center gap-3 bg-[#212121] rounded px-3 py-2 text-xs">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase" style={{ color: style.color, backgroundColor: style.bg }}>{d.outcome}</span>
+                                <span className="text-[#9CA3AF] truncate flex-1">{d.reason}</span>
+                                <span className="text-[#6A6E73] font-mono text-[10px]">{d.signal_id}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
