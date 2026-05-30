@@ -145,6 +145,7 @@ class StreamingSession:
 
         # Heartbeat — updated every process-loop iteration
         self._last_heartbeat = 0.0
+        self._last_stats_flush = 0.0
         self._heartbeat_lock = threading.Lock()
         self._process_loop_restarts = 0
 
@@ -311,6 +312,11 @@ class StreamingSession:
                 self._window_latency_sum = 0
                 self._window_tps_sum = 0
                 self._window_inference = 0
+
+            # Persist stats to DB every 60 seconds
+            if now - self._last_stats_flush >= 60.0:
+                self._persist_stats()
+                self._last_stats_flush = now
 
             if not buffer:
                 self._stop.wait(0.05)
@@ -541,6 +547,58 @@ class StreamingSession:
     # ---------- watchdog ----------
     _WATCHDOG_CHECK_INTERVAL = 30   # seconds between checks
     _HEARTBEAT_STALE_THRESHOLD = 60  # seconds before declaring thread dead
+
+    def _persist_stats(self):
+        """Flush agent stats, session totals, and snapshot to DB for persistence across restarts."""
+        from app.db import enqueue_write
+        try:
+            agent_count = len(self.store.agent_stats)
+            logger.info("Persisting stats: %d agents, totals.raw=%d", agent_count, self.totals["raw_signals"])
+            for name, stats in self.store.agent_stats.items():
+                enqueue_write("agent_stats_snapshots", {
+                    "session_id": self.session_id,
+                    "agent_name": name,
+                    "total_evaluated": getattr(stats, "total_evaluated", 0),
+                    "escalated": getattr(stats, "escalated", 0),
+                    "kept": getattr(stats, "kept", 0),
+                    "dropped": getattr(stats, "dropped", 0),
+                    "suppressed": getattr(stats, "suppressed", 0),
+                    "deduped": getattr(stats, "deduped", 0),
+                })
+
+            model_stats_json = {}
+            for k, v in self.model_stats.items():
+                model_stats_json[k] = {
+                    "calls": v.get("calls", 0),
+                    "avg_latency": round(v.get("latency_sum", 0) / max(v.get("calls", 1), 1), 1),
+                    "avg_tps": round(v.get("tps_sum", 0) / max(v.get("calls", 1), 1), 1),
+                }
+
+            enqueue_write("session_snapshots", {
+                "session_id": self.session_id,
+                "raw_signals": self.totals["raw_signals"],
+                "reasoning_tasks": self.totals["reasoning_tasks"],
+                "inference_calls": self.totals["inference_calls"],
+                "findings": self.totals["findings"],
+                "dropped": self.totals["dropped"],
+                "compression_ratio": self.metrics["compression_ratio"],
+                "signals_per_second": self.metrics["signals_per_second"],
+                "projected_clusters": self.metrics["projected_clusters"],
+                "model_stats": model_stats_json,
+            })
+
+            enqueue_write("metrics_snapshots", {
+                "session_id": self.session_id,
+                "signals_per_second": self.metrics["signals_per_second"],
+                "compression_ratio": self.metrics["compression_ratio"],
+                "reasoning_tasks": int(self.metrics["reasoning_tasks"]),
+                "projected_clusters": self.metrics["projected_clusters"],
+                "avg_latency_ms": self.metrics["avg_latency_ms"],
+                "avg_tps": self.metrics["avg_tps"],
+                "inference_in_flight": self.metrics["inference_in_flight"],
+            })
+        except Exception as e:
+            logger.warning("Stats persistence failed: %s", e)
 
     def _watchdog_loop(self):
         """Monitors the process-loop heartbeat; restarts the thread if stale."""

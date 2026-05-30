@@ -62,6 +62,38 @@ class SignalStore:
         self.agent_stats: Dict[str, AgentStats] = {}
         self.model_stats: Dict[str, ModelStats] = {}
         self.cluster_stats: Dict[str, ClusterStats] = {}
+        self._load_historical_stats()
+
+    def _load_historical_stats(self):
+        """Seed agent/model stats from DB on startup so dashboard isn't empty after restart."""
+        import asyncio
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            from app.db import query
+
+            async def _load():
+                rows = await query("""
+                    SELECT DISTINCT ON (agent_name) agent_name, total_evaluated, escalated, kept, dropped, suppressed, deduped
+                    FROM agent_stats_snapshots ORDER BY agent_name, captured_at DESC
+                """)
+                for r in rows:
+                    self.agent_stats[r["agent_name"]] = AgentStats(
+                        total_evaluated=r.get("total_evaluated", 0),
+                        escalated=r.get("escalated", 0),
+                        kept=r.get("kept", 0),
+                        dropped=r.get("dropped", 0),
+                        suppressed=r.get("suppressed", 0),
+                        deduped=r.get("deduped", 0),
+                    )
+                if rows:
+                    logger.info("Loaded historical agent stats for %d agents from DB", len(rows))
+
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_load())
+            loop.close()
+        except Exception as e:
+            logger.debug("No historical stats to load: %s", e)
 
     def add_signal(self, signal_dict: dict):
         """Store an actionable signal (already filtered to medium+)."""

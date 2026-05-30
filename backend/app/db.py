@@ -15,7 +15,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _pool = None
-_write_queue: deque = deque(maxlen=5000)
+_write_queue: deque = deque(maxlen=50000)
 _writer_thread: Optional[threading.Thread] = None
 _writer_stop = threading.Event()
 
@@ -96,27 +96,32 @@ async def execute(sql: str, *args):
 
 def enqueue_write(table: str, data: dict):
     """Non-blocking write — enqueues for background batch insert."""
+    qlen = len(_write_queue)
+    if qlen > 40000:
+        logger.warning("Write queue near capacity: %d/50000", qlen)
     _write_queue.append((table, data))
+
+
+def get_queue_depth() -> int:
+    return len(_write_queue)
 
 
 def _start_writer():
     global _writer_thread
     _writer_stop.clear()
-    _writer_thread = threading.Thread(target=_writer_loop, daemon=True)
+    _writer_thread = threading.Thread(target=_writer_loop, daemon=True, name="db-writer")
     _writer_thread.start()
 
 
 def _writer_loop():
     """Background thread that batches and writes queued data to the database."""
-    import asyncpg
-
     _db_url = os.getenv("DATABASE_URL", "")
     if not _db_url:
         return
 
     while not _writer_stop.is_set():
         batch = []
-        while _write_queue and len(batch) < 50:
+        while _write_queue and len(batch) < 200:
             try:
                 batch.append(_write_queue.popleft())
             except IndexError:
@@ -125,7 +130,26 @@ def _writer_loop():
         if batch:
             _flush_batch_sync(batch, _db_url)
 
-        _writer_stop.wait(1.0)
+        _writer_stop.wait(0.5)
+
+
+def _coerce_value(col: str, val):
+    """Fix type mismatches before DB insert."""
+    if col in ("namespaces", "clusters"):
+        if isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                return [val]
+        if isinstance(val, list):
+            return val
+    if isinstance(val, dict):
+        return json.dumps(val)
+    if isinstance(val, list):
+        return json.dumps(val)
+    return val
 
 
 def _flush_batch_sync(batch: list, db_url: str):
@@ -144,23 +168,20 @@ def _flush_batch_sync(batch: list, db_url: str):
                 for table, rows in by_table.items():
                     for row in rows:
                         cols = list(row.keys())
-                        vals = []
-                        for c in cols:
-                            v = row[c]
-                            if isinstance(v, (dict, list)):
-                                vals.append(json.dumps(v))
-                            else:
-                                vals.append(v)
+                        vals = [_coerce_value(c, row[c]) for c in cols]
                         placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
                         col_names = ", ".join(cols)
-                        await conn.execute(
-                            f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
-                            *vals,
-                        )
+                        try:
+                            await conn.execute(
+                                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
+                                *vals,
+                            )
+                        except Exception as e:
+                            logger.warning("DB insert %s failed: %s", table, str(e)[:150])
             finally:
                 await conn.close()
         except Exception as e:
-            logger.warning("DB batch write failed: %s", str(e)[:200])
+            logger.warning("DB batch connect failed: %s", str(e)[:200])
 
     loop = asyncio.new_event_loop()
     try:
