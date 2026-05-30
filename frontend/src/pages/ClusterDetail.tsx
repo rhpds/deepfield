@@ -21,7 +21,7 @@ interface ClusterData {
 
 interface ObsSignal {
   signal_id: string;
-  cluster_id: string;
+  cluster: string;
   namespace: string;
   resource_kind: string;
   signal_type: string;
@@ -96,7 +96,7 @@ export default function ClusterDetail() {
 
         if (sigData.signals) {
           const all: ObsSignal[] = Array.isArray(sigData.signals) ? sigData.signals : [];
-          setSignals(all.filter((s) => s.cluster_id === id));
+          setSignals(all.filter((s) => s.cluster === id));
         }
 
         setLoading(false);

@@ -6,7 +6,8 @@ import threading
 import random
 from collections import deque
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("deepfield.session")
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -242,7 +243,7 @@ class StreamingSession:
     def _process_loop(self):
         """Continuously drains signal queue, normalizes, filters, correlates, routes."""
         buffer = []
-        logger.info("_process_loop started")
+        logger.warning("_process_loop STARTED — thread alive")
 
         while not self._stop.is_set():
           try:
@@ -430,12 +431,12 @@ class StreamingSession:
             buffer.clear()
             self._stop.wait(0.05)
 
-          except Exception as e:
+          except BaseException as e:
             logger.error("Process loop error (recovering): %s", e, exc_info=True)
             buffer.clear()
             self._stop.wait(1)
 
-        logger.info("_process_loop exited (stop=%s)", self._stop.is_set())
+        logger.warning("_process_loop EXITED (stop=%s)", self._stop.is_set())
 
     def _inference_loop(self):
         """Dedicated thread that processes inference tasks one at a time."""
