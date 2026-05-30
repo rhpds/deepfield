@@ -191,6 +191,12 @@ export default function FleetOverview() {
 
   /* Model stats */
   const modelEntries = live?.model_stats ? Object.entries(live.model_stats) : [];
+  const isMicroModel = (name: string) => {
+    const l = name.toLowerCase();
+    return l.includes('cpu') || l.includes('xeon') || l.includes('granite_2b') || l.includes('phi3_mini') || l.includes('qwen25');
+  };
+  const microModels = modelEntries.filter(([name]) => isMicroModel(name));
+  const macroModels = modelEntries.filter(([name]) => !isMicroModel(name));
 
   /* Recent signals — last 10 */
   const recentSignals = (signals ?? []).slice(-10).reverse();
@@ -294,7 +300,7 @@ export default function FleetOverview() {
       <div className="border border-[#333] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
-            Micro-Agents <span className="text-[#0071C5]">· Deterministic Filters</span>
+            Nano-Agents <span className="text-[#0071C5]">· Deterministic Filters</span>
           </div>
           <button onClick={() => navigate('/pipeline')} className="text-xs text-[#0071C5] hover:text-white transition">
             View Pipeline →
@@ -336,44 +342,79 @@ export default function FleetOverview() {
       </div>
 
       {/* ============================================================ */}
-      {/*  4. Macro-Agents (LLM Models — Inference)                     */}
+      {/*  4a. Micro-Agents (Xeon 6 CPU — Fast Triage)                  */}
       {/* ============================================================ */}
       <div className="border border-[#333] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
-            Macro-Agents <span className="text-[#EE0000]">· LLM Inference</span>
+            Micro-Agents <span className="text-[#0071C5]">· Xeon 6 Triage</span>
           </div>
-          <button onClick={() => navigate('/llm')} className="text-xs text-[#EE0000] hover:text-white transition">
-            View LLM Observatory →
+          <button onClick={() => navigate('/llm')} className="text-xs text-[#0071C5] hover:text-white transition">
+            View Details →
           </button>
         </div>
-        {modelEntries.length === 0 ? (
-          <div className="text-sm text-[#6A6E73]">No models active — waiting for escalated signals</div>
+        <p className="text-[10px] text-[#6A6E73] mb-3">Fast CPU inference for signal classification, correlation, remediation suggestions</p>
+        {microModels.length === 0 ? (
+          <div className="text-sm text-[#6A6E73]">No micro models active — waiting for triage tasks</div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {modelEntries.map(([model, stats]) => {
-              const isGaudi = !model.toLowerCase().includes('cpu') && !model.toLowerCase().includes('xeon');
-              const laneColor = isGaudi ? '#EE0000' : '#0071C5';
-              const laneLabel = isGaudi ? 'Gaudi 3' : 'Xeon 6';
-              return (
-                <div key={model}
-                  className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 cursor-pointer hover:border-[#555] transition-colors"
-                  onClick={() => navigate('/llm')}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${laneColor}20`, color: laneColor }}>{laneLabel}</span>
-                    <span className="text-xs text-[#6A6E73] truncate font-mono">{model.replace(/_/g, ' ')}</span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-lg font-bold text-white tabular-nums" style={{ fontFamily: 'Red Hat Display' }}>{stats.calls}</span>
-                    <span className="text-[10px] text-[#6A6E73]">calls</span>
-                  </div>
-                  <div className="text-[10px] text-[#F0AB00] tabular-nums mt-1">
-                    {stats.avg_tps} tok/s · {stats.avg_latency}ms
-                  </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {microModels.map(([model, stats]) => (
+              <div key={model}
+                className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 cursor-pointer hover:border-[#555] transition-colors"
+                onClick={() => navigate('/llm')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#0071C520', color: '#0071C5' }}>Xeon 6</span>
+                  <span className="text-xs text-[#6A6E73] truncate font-mono">{model.replace(/_/g, ' ')}</span>
                 </div>
-              );
-            })}
+                <div className="flex items-baseline gap-2">
+                  <span className="text-lg font-bold text-white tabular-nums" style={{ fontFamily: 'Red Hat Display' }}>{stats.calls}</span>
+                  <span className="text-[10px] text-[#6A6E73]">calls</span>
+                </div>
+                <div className="text-[10px] text-[#0071C5] tabular-nums mt-1">
+                  {stats.avg_tps} tok/s · {stats.avg_latency}ms
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ============================================================ */}
+      {/*  4b. Macro-Agents (Gaudi 3 GPU — Deep Reasoning)              */}
+      {/* ============================================================ */}
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+            Macro-Agents <span className="text-[#EE0000]">· Gaudi 3 Reasoning</span>
+          </div>
+          <button onClick={() => navigate('/llm')} className="text-xs text-[#EE0000] hover:text-white transition">
+            View Details →
+          </button>
+        </div>
+        <p className="text-[10px] text-[#6A6E73] mb-3">GPU inference for root cause analysis, incident creation, capacity forecasting</p>
+        {macroModels.length === 0 ? (
+          <div className="text-sm text-[#6A6E73]">No macro models active — waiting for high-severity escalations</div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {macroModels.map(([model, stats]) => (
+              <div key={model}
+                className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 cursor-pointer hover:border-[#555] transition-colors"
+                onClick={() => navigate('/llm')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#EE000020', color: '#EE0000' }}>Gaudi 3</span>
+                  <span className="text-xs text-[#6A6E73] truncate font-mono">{model.replace(/_/g, ' ')}</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-lg font-bold text-white tabular-nums" style={{ fontFamily: 'Red Hat Display' }}>{stats.calls}</span>
+                  <span className="text-[10px] text-[#6A6E73]">calls</span>
+                </div>
+                <div className="text-[10px] text-[#EE0000] tabular-nums mt-1">
+                  {stats.avg_tps} tok/s · {stats.avg_latency}ms
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
