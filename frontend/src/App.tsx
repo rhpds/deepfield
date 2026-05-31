@@ -1,5 +1,10 @@
 import { Routes, Route, NavLink, Outlet } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TimeRangeProvider, TimeRangePicker } from './components/TimeRangeContext';
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 2000 } },
+});
 import FleetOverview from './pages/FleetOverview';
 import SignalPipeline from './pages/SignalPipeline';
 import LiveFlow from './pages/LiveFlow';
@@ -67,6 +72,7 @@ function AppLayout() {
 
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <TimeRangeProvider>
       <Routes>
         <Route element={<AppLayout />}>
@@ -80,5 +86,6 @@ export default function App() {
         </Route>
       </Routes>
     </TimeRangeProvider>
+    </QueryClientProvider>
   );
 }

@@ -16,6 +16,7 @@ from app.api.demo import router as demo_router
 from app.api.observatory import router as observatory_router
 from app.api.remediation import router as remediation_router
 from app.api.integration import router as integration_router
+from app.api.metrics import router as metrics_router
 
 app = FastAPI(
     title="DeepField",
@@ -40,6 +41,7 @@ app.include_router(demo_router)
 app.include_router(observatory_router)
 app.include_router(remediation_router)
 app.include_router(integration_router)
+app.include_router(metrics_router)
 
 
 @app.on_event("startup")

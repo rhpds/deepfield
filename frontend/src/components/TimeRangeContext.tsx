@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, useRef, useCallback, type ReactNode } from 'react';
 
 export type TimeRangeKey = '5m' | '15m' | '1h' | '6h' | '24h' | '7d';
 
@@ -17,14 +17,14 @@ export const TIME_RANGES: TimeRange[] = [
   { key: '7d',  label: '7d',  ms: 7 * 24 * 60 * 60 * 1000 },
 ];
 
+const DEFAULT: TimeRange = { key: '1h', label: '1h', ms: 60 * 60 * 1000 };
+
 interface TimeRangeContextValue {
   range: TimeRange;
   setRange: (r: TimeRange) => void;
   since: () => number;
   sinceISO: () => string;
 }
-
-const DEFAULT = TIME_RANGES[2]; // 1h
 
 const Ctx = createContext<TimeRangeContextValue>({
   range: DEFAULT,
@@ -34,9 +34,17 @@ const Ctx = createContext<TimeRangeContextValue>({
 });
 
 export function TimeRangeProvider({ children }: { children: ReactNode }) {
-  const [range, setRange] = useState<TimeRange>(DEFAULT);
-  const since = () => Date.now() - range.ms;
-  const sinceISO = () => new Date(since()).toISOString();
+  const [range, setRangeRaw] = useState<TimeRange>(DEFAULT);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setRange = useCallback((r: TimeRange) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setRangeRaw(r), 150);
+  }, []);
+
+  const since = useCallback(() => Date.now() - range.ms, [range.ms]);
+  const sinceISO = useCallback(() => new Date(Date.now() - range.ms).toISOString(), [range.ms]);
+
   return (
     <Ctx.Provider value={{ range, setRange, since, sinceISO }}>
       {children}

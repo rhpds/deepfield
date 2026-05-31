@@ -8,8 +8,7 @@ from app.domain.models import ReasoningTask
 MACRO_MODELS = [
     "deepseek_r1_distill_qwen_14b_gaudi",
     "phi4_gaudi",
-    "qwen3_14b_gaudi_a",
-    "qwen3_14b_gaudi_b",
+    # qwen3 removed: 25-30% timeout rate (28-30s avg latency hits request timeout)
 ]
 
 # === Micro agents — Xeon 6 CPU, fast triage (15-28 tok/s via OpenVINO) ===
