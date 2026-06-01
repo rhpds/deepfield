@@ -160,6 +160,16 @@ class StreamingSession:
         self._window_inference = 0
         self._last_snapshot = 0
 
+        # Cluster profile (adaptive thresholds)
+        self._cluster_profile = None
+        if self.source == "live" and self.cluster_configs:
+            from app.session.cluster_profile import get_profile, load_profiles_from_db
+            load_profiles_from_db()
+            cluster_name = self.cluster_configs[0].get("name", "unknown")
+            self._cluster_profile = get_profile(cluster_name)
+            logger.info("Loaded cluster profile for %s (confidence=%.2f)",
+                        cluster_name, self._cluster_profile.confidence)
+
         # Prometheus
         self._prom = None
         try:
@@ -324,6 +334,7 @@ class StreamingSession:
             # Persist stats to DB every 10 seconds
             if now - self._last_stats_flush >= 10.0:
                 self._persist_stats()
+                self._update_cluster_profile()
                 self._last_stats_flush = now
 
             if not buffer:
@@ -383,7 +394,7 @@ class StreamingSession:
             new_findings = []
 
             try:
-                pipeline_result = run_pipeline(normalized)
+                pipeline_result = run_pipeline(normalized, cluster_profile=self._cluster_profile)
             except Exception as e:
                 logger.error("run_pipeline crashed: %s", e, exc_info=True)
                 pipeline_result = None
@@ -537,6 +548,30 @@ class StreamingSession:
                 self._do_inference(task, model)
             else:
                 self._stop.wait(1.0)
+
+    def _update_cluster_profile(self):
+        """Update the cluster profile with recent signal patterns."""
+        if not self._cluster_profile:
+            return
+        try:
+            signal_counts: dict = {}
+            namespace_counts: dict = {}
+            for s in list(self.store.recent_signals)[-200:]:
+                st = s.get("signal_type", "")
+                ns = s.get("namespace", "")
+                signal_counts[st] = signal_counts.get(st, 0) + 1
+                namespace_counts[ns] = namespace_counts.get(ns, 0) + 1
+
+            self._cluster_profile.update_from_signals(
+                signal_counts, namespace_counts,
+                total_signals=self.totals["raw_signals"],
+                duration_hours=max(0.01, (time.monotonic() - self._window_start) / 3600),
+            )
+
+            from app.session.cluster_profile import persist_profile
+            persist_profile(self._cluster_profile)
+        except Exception as e:
+            logger.warning("Profile update failed: %s", e)
 
     def _push_escalation(self, decision):
         """Log escalation for cross-product visibility. Actual push happens via Kafka/webhook."""

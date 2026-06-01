@@ -19,7 +19,8 @@ DAMPEN_THRESHOLD = 10
 DAMPEN_WINDOW_SECONDS = 600
 
 
-def filter(signals: List[NormalizedSignal], window_seconds: float = TRANSIENT_WINDOW_SECONDS) -> List[FilterDecision]:
+def filter(signals: List[NormalizedSignal], window_seconds: float = TRANSIENT_WINDOW_SECONDS,
+           cluster_profile=None) -> List[FilterDecision]:
     decisions = []
     seen: dict[str, float] = {}
     ns_counts: dict[str, list] = {}
@@ -47,7 +48,8 @@ def filter(signals: List[NormalizedSignal], window_seconds: float = TRANSIENT_WI
         ns_counts[ns_key] = [t for t in ns_counts[ns_key] if ts - t < DAMPEN_WINDOW_SECONDS]
         ns_counts[ns_key].append(ts)
 
-        if len(ns_counts[ns_key]) > DAMPEN_THRESHOLD:
+        threshold = cluster_profile.get_dampen_threshold(s.namespace) if cluster_profile else DAMPEN_THRESHOLD
+        if len(ns_counts[ns_key]) > threshold:
             decisions.append(FilterDecision(
                 signal_id=s.signal_id, filter_name=name, outcome="suppress",
                 reason_code="namespace_dampened",

@@ -12,17 +12,9 @@ name = "DedupeAgent"
 
 DEDUPE_WINDOW_SECONDS = 60
 
-HIGH_VOLUME_TYPES = {
-    "event_failedscheduling",
-    "event_migrationtargetpodunschedulable",
-    "event_failedmigration",
-    "event_migrationbackoff",
-    "event_failedgetresourcemetric",
-}
-HIGH_VOLUME_WINDOW_SECONDS = 600
 
-
-def filter(signals: List[NormalizedSignal], window_seconds: float = DEDUPE_WINDOW_SECONDS) -> List[FilterDecision]:
+def filter(signals: List[NormalizedSignal], window_seconds: float = DEDUPE_WINDOW_SECONDS,
+           cluster_profile=None) -> List[FilterDecision]:
     decisions = []
     seen: dict[str, float] = {}
 
@@ -30,7 +22,10 @@ def filter(signals: List[NormalizedSignal], window_seconds: float = DEDUPE_WINDO
         key = f"{s.cluster_id}:{s.namespace}:{s.resource_kind}:{s.resource_name}:{s.signal_type}"
         ts = s.timestamp.timestamp()
 
-        window = HIGH_VOLUME_WINDOW_SECONDS if s.signal_type in HIGH_VOLUME_TYPES else window_seconds
+        if cluster_profile:
+            window = cluster_profile.get_dedup_window(s.signal_type)
+        else:
+            window = window_seconds
 
         if key in seen and (ts - seen[key]) < window:
             decisions.append(FilterDecision(

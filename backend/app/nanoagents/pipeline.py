@@ -22,14 +22,19 @@ AGENT_MODULES = [
 ]
 
 
-def run_pipeline(signals: List[NormalizedSignal]) -> dict:
+def run_pipeline(signals: List[NormalizedSignal], cluster_profile=None) -> dict:
     all_decisions: List[FilterDecision] = []
     suppressed_ids: set = set()
     deduped_ids: set = set()
 
     for module_path in AGENT_MODULES:
         module = importlib.import_module(module_path)
-        decisions = module.filter(signals)
+        if cluster_profile and module_path in (
+            "app.nanoagents.dedupe", "app.nanoagents.transient_suppressor"
+        ):
+            decisions = module.filter(signals, cluster_profile=cluster_profile)
+        else:
+            decisions = module.filter(signals)
         all_decisions.extend(decisions)
 
         for d in decisions:
