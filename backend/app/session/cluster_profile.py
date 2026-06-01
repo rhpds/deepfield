@@ -70,14 +70,15 @@ class ClusterProfile:
             old = self.baseline_signal_types.get(sig_type, 0.0)
             self.baseline_signal_types[sig_type] = old * 0.8 + rate * 0.2 if old > 0 else rate
 
-            avg_rate = sum(self.baseline_signal_types.values()) / max(len(self.baseline_signal_types), 1)
-            if rate > avg_rate * 10:
+            other_rates = [v for k, v in self.baseline_signal_types.items() if k != sig_type]
+            avg_other = sum(other_rates) / max(len(other_rates), 1) if other_rates else rate
+            if avg_other > 0 and rate > avg_other * 10:
                 current_window = self.dedup_windows.get(sig_type, DEFAULT_DEDUP_WINDOW)
                 new_window = min(current_window * 2, MAX_DEDUP_WINDOW)
                 if new_window > current_window:
                     self.dedup_windows[sig_type] = new_window
-                    logger.info("Auto-tuned dedup window for %s: %ds → %ds (rate %.0f/hr, avg %.0f/hr)",
-                                sig_type, current_window, new_window, rate, avg_rate)
+                    logger.info("Auto-tuned dedup window for %s: %ds → %ds (rate %.0f/hr, avg_other %.0f/hr)",
+                                sig_type, current_window, new_window, rate, avg_other)
 
         for ns, count in namespace_counts.items():
             rate = count / duration_hours
