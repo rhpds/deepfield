@@ -33,13 +33,22 @@ LITELLM_MODELS = {
         "litellm_model": "qwen3-14b",
         "hardware_lane": "gaudi3",
     },
-    # Micro — CPU models via LiteLLM (fast triage)
+    # Micro — CPU models via LiteLLM (fast triage on Xeon 6)
+    "granite_tiny_cpu_xeon": {
+        "litellm_model": "granite-4-0-h-tiny",
+        "hardware_lane": "xeon6",
+    },
+    "granite_8b_cpu_xeon": {
+        "litellm_model": "granite-3-2-8b-instruct",
+        "hardware_lane": "xeon6",
+    },
+    # Legacy aliases — keep for compatibility with existing inference records
     "granite_2b_cpu_xeon": {
         "litellm_model": "granite-4-0-h-tiny",
         "hardware_lane": "xeon6",
     },
     "phi3_mini_cpu_xeon": {
-        "litellm_model": "codellama-7b-instruct",
+        "litellm_model": "granite-4-0-h-tiny",
         "hardware_lane": "xeon6",
     },
     "qwen25_3b_cpu_xeon": {

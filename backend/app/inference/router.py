@@ -13,9 +13,8 @@ MACRO_MODELS = [
 
 # === Micro agents — Xeon 6 CPU, fast triage (15-28 tok/s via OpenVINO) ===
 MICRO_MODELS = [
-    "granite_2b_cpu_xeon",
-    "phi3_mini_cpu_xeon",
-    "qwen25_3b_cpu_xeon",
+    "granite_tiny_cpu_xeon",
+    "granite_8b_cpu_xeon",
 ]
 
 # Task type → tier
