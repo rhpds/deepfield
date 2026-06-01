@@ -145,6 +145,10 @@ class ScenarioRunner:
         }
 
         try:
+            # Resolve any existing open incident for this namespace so we get a fresh one
+            await self._resolve_existing_incidents(scenario.namespace)
+            result["steps"].append({"step": "clear_existing", "status": "done"})
+
             if scenario.inject_type == "synthetic_signal":
                 result["steps"].append(await self._inject_signal(scenario))
             else:
@@ -172,6 +176,18 @@ class ScenarioRunner:
 
         result["completed_at"] = datetime.now(timezone.utc).isoformat()
         return result
+
+    async def _resolve_existing_incidents(self, namespace: str):
+        """Resolve any open incidents for this namespace so the scenario gets a fresh one."""
+        try:
+            from app.api.incidents import get_manager
+            mgr = get_manager()
+            for inc in mgr.list_incidents(status="open"):
+                if inc.get("namespace") == namespace:
+                    mgr.resolve_incident(inc["id"])
+                    logger.info("Resolved existing incident %s for namespace %s", inc["id"][:8], namespace)
+        except Exception as e:
+            logger.warning("Failed to resolve existing incidents: %s", e)
 
     async def _inject_signal(self, scenario: Scenario) -> dict:
         import httpx
