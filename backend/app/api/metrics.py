@@ -77,34 +77,31 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
             "total_tokens_out": row["total_tokens_out"] or 0,
         }
 
-    funnel_row = await db.query(
-        f"SELECT "
-        f"COALESCE(SUM(raw_signals), 0) as raw, "
-        f"COALESCE(SUM(dropped), 0) as dropped, "
-        f"COALESCE(SUM(findings), 0) as findings, "
-        f"COALESCE(SUM(reasoning_tasks), 0) as tasks, "
-        f"COALESCE(SUM(inference_calls), 0) as inferences "
-        f"FROM session_snapshots "
-        f"WHERE captured_at >= NOW() - INTERVAL '{interval}'"
+    sig_count = await db.query(
+        f"SELECT COUNT(*) as cnt FROM signals WHERE created_at >= NOW() - INTERVAL '{interval}'"
     )
-    if funnel_row:
-        f = funnel_row[0]
-        funnel = {
-            "raw": f.get("raw", 0),
-            "retained": f.get("raw", 0) - f.get("dropped", 0),
-            "findings": f.get("findings", 0),
-            "tasks": f.get("tasks", 0),
-            "inferences": f.get("inferences", 0),
-        }
-    else:
-        t = session.totals if session else {}
-        funnel = {
-            "raw": t.get("raw_signals", 0),
-            "retained": t.get("raw_signals", 0) - t.get("dropped", 0),
-            "findings": t.get("findings", 0),
-            "tasks": t.get("reasoning_tasks", 0),
-            "inferences": t.get("inference_calls", 0),
-        }
+    finding_count = await db.query(
+        f"SELECT COUNT(*) as cnt FROM findings WHERE created_at >= NOW() - INTERVAL '{interval}'"
+    )
+    inf_count = await db.query(
+        f"SELECT COUNT(*) as cnt FROM inferences WHERE created_at >= NOW() - INTERVAL '{interval}'"
+    )
+    decision_count = await db.query(
+        f"SELECT COUNT(*) as cnt FROM decisions WHERE created_at >= NOW() - INTERVAL '{interval}'"
+    )
+    dedup_count = await db.query(
+        f"SELECT COUNT(*) as cnt FROM decisions WHERE outcome = 'dedupe' AND created_at >= NOW() - INTERVAL '{interval}'"
+    )
+
+    raw = decision_count[0]["cnt"] if decision_count else 0
+    deduped = dedup_count[0]["cnt"] if dedup_count else 0
+    funnel = {
+        "raw": raw,
+        "retained": sig_count[0]["cnt"] if sig_count else 0,
+        "findings": finding_count[0]["cnt"] if finding_count else 0,
+        "tasks": raw - deduped,
+        "inferences": inf_count[0]["cnt"] if inf_count else 0,
+    }
 
     live_metrics = session.metrics if session else {}
 

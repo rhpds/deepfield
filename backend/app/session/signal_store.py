@@ -150,14 +150,16 @@ class SignalStore:
     def add_decision(self, decision_dict: dict):
         decision_dict["_ts"] = datetime.now(timezone.utc).isoformat()
         self.recent_decisions.append(decision_dict)
-        from app.db import enqueue_write
-        enqueue_write("decisions", {
-            "filter_name": decision_dict.get("filter_name", ""),
-            "outcome": decision_dict.get("outcome", ""),
-            "reason": decision_dict.get("reason", ""),
-            "signal_id": decision_dict.get("signal_id", ""),
-            "evidence": decision_dict.get("evidence"),
-        })
+        outcome = decision_dict.get("outcome", "")
+        if outcome in ("escalate", "suppress", "dedupe", "enrich"):
+            from app.db import enqueue_write
+            enqueue_write("decisions", {
+                "filter_name": decision_dict.get("filter_name", ""),
+                "outcome": outcome,
+                "reason": decision_dict.get("reason", ""),
+                "signal_id": decision_dict.get("signal_id", ""),
+                "evidence": decision_dict.get("evidence"),
+            })
 
         agent = decision_dict.get("filter_name", "unknown")
         if agent not in self.agent_stats:
