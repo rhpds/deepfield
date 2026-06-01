@@ -575,12 +575,18 @@ class StreamingSession:
 
     def _feed_incident(self, task, model: str, output: str):
         """Feed inference results to the incident manager."""
+        logger.warning("_feed_incident called: task_type=%s context_keys=%s",
+                       task.task_type, list(task.context.keys()) if task.context else [])
         try:
             from app.api.incidents import get_manager
             mgr = get_manager()
-            ns = task.context.get("namespace") or (task.context.get("namespaces", [""])[0] if task.context.get("namespaces") else "")
-            cluster = task.context.get("cluster", "infra01")
+            ns = task.context.get("namespace") or ""
+            if not ns and task.context.get("namespaces"):
+                nsl = task.context["namespaces"]
+                ns = nsl[0] if isinstance(nsl, list) and nsl else ""
+            cluster = task.context.get("cluster") or task.context.get("clusters", ["infra01"])[0] if task.context.get("clusters") else "infra01"
             if not ns:
+                logger.debug("No namespace in task context: %s", list(task.context.keys()))
                 return
 
             mgr.process_signal(
