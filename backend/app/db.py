@@ -172,10 +172,15 @@ def _flush_batch_sync(batch: list, db_url: str):
                         placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
                         col_names = ", ".join(cols)
                         try:
-                            await conn.execute(
-                                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
-                                *vals,
-                            )
+                            upsert_tables = {"cluster_profiles": "cluster_id"}
+                            if table in upsert_tables:
+                                pk = upsert_tables[table]
+                                update_cols = [c for c in cols if c != pk]
+                                update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                                sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) ON CONFLICT ({pk}) DO UPDATE SET {update_set}"
+                            else:
+                                sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
+                            await conn.execute(sql, *vals)
                         except Exception as e:
                             logger.warning("DB insert %s failed: %s", table, str(e)[:150])
             finally:
