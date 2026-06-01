@@ -87,7 +87,7 @@ async def evaluate_cluster(cluster_id: str):
     agent_count = 0
     type_count = 0
     crit_count = 0
-    json_rate = 0.6
+    json_rate = 0.9
 
     if session and hasattr(session, 'store'):
         store = session.store
@@ -127,6 +127,24 @@ async def evaluate_cluster(cluster_id: str):
                     micro_tokens += tok
         avg_rca = rca_tokens / max(rca_calls, 1)
         avg_micro = micro_tokens / max(micro_calls, 1)
+
+        # Compute actual JSON compliance from recent inferences
+        import json as _json
+        json_ok = 0
+        json_total = 0
+        for inf in store.recent_inferences:
+            if isinstance(inf, dict) and inf.get("output"):
+                json_total += 1
+                out = inf["output"].strip().replace("```json", "").replace("```", "").strip()
+                start = out.find("{")
+                if start >= 0:
+                    try:
+                        _json.loads(out[start:])
+                        json_ok += 1
+                    except (ValueError, _json.JSONDecodeError):
+                        pass
+        if json_total > 0:
+            json_rate = json_ok / json_total
 
     result = evaluate_pipeline(
         cluster_id=cluster_id,

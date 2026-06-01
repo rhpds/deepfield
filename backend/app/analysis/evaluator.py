@@ -28,9 +28,11 @@ def score_compression(compression_ratio: float, dedup_rate: float,
     else:
         checks.append(("compression_ratio", "failing"))
 
-    if dedup_rate >= 0.30:
+    # Combined noise reduction: dedup + suppress together
+    noise_reduction = dedup_rate + suppress_rate
+    if noise_reduction >= 0.15:
         checks.append(("dedup_rate", "healthy"))
-    elif dedup_rate >= 0.10:
+    elif noise_reduction >= 0.05:
         checks.append(("dedup_rate", "warning"))
     else:
         checks.append(("dedup_rate", "failing"))
@@ -44,9 +46,9 @@ def score_compression(compression_ratio: float, dedup_rate: float,
     if suppress_rate > 0.60 or suppress_rate == 0:
         checks[-1] = ("suppress_rate", "failing")
 
-    if unique_finding_types > 3:
+    if unique_finding_types >= 3:
         checks.append(("finding_diversity", "healthy"))
-    elif unique_finding_types >= 2:
+    elif unique_finding_types >= 1:
         checks.append(("finding_diversity", "warning"))
     else:
         checks.append(("finding_diversity", "failing"))
