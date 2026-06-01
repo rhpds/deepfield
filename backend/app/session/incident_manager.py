@@ -111,7 +111,7 @@ class IncidentManager:
             return None
         inference_entry = {
             "type": task_type, "model": model,
-            "output_summary": output[:500] if output else "",
+            "output_summary": output[:2000] if output else "",
             "ts": datetime.now(timezone.utc).isoformat(),
         }
         inc["evidence"]["inferences"].append(inference_entry)

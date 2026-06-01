@@ -256,16 +256,22 @@ export default function Incidents() {
                       <div>
                         <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-2">AI Analysis History</div>
                         <div className="space-y-2">
-                          {inc.evidence.inferences.map((inf, i) => (
-                            <div key={i} className="bg-[#1a1a1a] rounded px-3 py-2 text-xs">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-white font-medium">{inf.type.replace(/_/g, ' ')}</span>
-                                <span className="text-[#6A6E73]">{inf.model}</span>
-                                <span className="text-[#6A6E73] ml-auto">{inf.ts ? relativeTime(inf.ts) : ''}</span>
+                          {inc.evidence.inferences.map((inf, i) => {
+                            const parsed = inf.output_summary ? tryParseJSON(inf.output_summary) : null;
+                            const displayText = parsed
+                              ? String(parsed.root_cause || parsed.explanation || parsed.fix || inf.output_summary)
+                              : inf.output_summary;
+                            return (
+                              <div key={i} className="bg-[#1a1a1a] rounded px-3 py-2 text-xs">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-white font-medium">{inf.type.replace(/_/g, ' ')}</span>
+                                  <span className="text-[#6A6E73]">{inf.model}</span>
+                                  <span className="text-[#6A6E73] ml-auto">{inf.ts ? relativeTime(inf.ts) : ''}</span>
+                                </div>
+                                <p className="text-[#a0a0a0] whitespace-pre-wrap">{displayText}</p>
                               </div>
-                              <p className="text-[#a0a0a0]">{inf.output_summary}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
