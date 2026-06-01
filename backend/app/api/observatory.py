@@ -1,12 +1,18 @@
-"""Observatory API — current session data for real-time views.
+"""Observatory API — signal, agent, model, and cluster data.
 
-Returns in-memory data from the active session. For time-windowed
-historical queries, use /api/v1/metrics?window= instead.
+Supports ?window= query param (5m, 15m, 1h, 6h, 24h, 7d) for time-filtered views.
+Falls back to in-memory session data when DB is empty.
 """
 
-from fastapi import APIRouter
+from typing import Optional
+from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/api/v1/observatory", tags=["observatory"])
+
+WINDOW_SQL = {
+    "5m": "5 minutes", "15m": "15 minutes", "1h": "1 hour",
+    "6h": "6 hours", "24h": "24 hours", "7d": "7 days",
+}
 
 
 def _get_store():
@@ -17,41 +23,102 @@ def _get_store():
     return session.store
 
 
+def _interval(window: Optional[str]) -> str:
+    return WINDOW_SQL.get(window or "1h", "1 hour")
+
+
 @router.get("/agents")
-async def get_agents():
+async def get_agents(window: Optional[str] = Query(None)):
+    from app import db
+    interval = _interval(window)
+
+    if window:
+        rows = await db.query(
+            f"SELECT filter_name, outcome, COUNT(*) as cnt FROM decisions "
+            f"WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"GROUP BY filter_name, outcome ORDER BY filter_name"
+        )
+        agents: dict = {}
+        for r in rows:
+            name = r["filter_name"]
+            if name not in agents:
+                agents[name] = {"total_evaluated": 0, "escalated": 0, "kept": 0, "dropped": 0, "suppressed": 0, "deduped": 0}
+            agents[name]["total_evaluated"] += r["cnt"]
+            if r["outcome"] in agents[name]:
+                agents[name][r["outcome"]] += r["cnt"]
+
+        decisions = await db.query(
+            f"SELECT * FROM decisions WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"ORDER BY created_at DESC LIMIT 50"
+        )
+        if agents:
+            return {"agents": agents, "recent_decisions": decisions}
+
     store = _get_store()
     if store and store.agent_stats:
         return {
             "agents": store.get_agent_summary(),
             "recent_decisions": store.get_recent_decisions(50),
         }
-    from app import db
     decisions = await db.query("SELECT * FROM decisions ORDER BY created_at DESC LIMIT 50")
     return {"agents": {}, "recent_decisions": decisions}
 
 
 @router.get("/llm")
-async def get_llm():
+async def get_llm(window: Optional[str] = Query(None)):
+    from app import db
+    interval = _interval(window)
+
+    if window:
+        inferences = await db.query(
+            f"SELECT * FROM inferences WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"ORDER BY created_at DESC LIMIT 50"
+        )
+        models: dict = {}
+        for inf in inferences:
+            m = inf.get("model", "unknown")
+            if m not in models:
+                models[m] = {"total_calls": 0, "total_tokens_in": 0, "total_tokens_out": 0, "total_latency_ms": 0, "errors": 0, "task_types": {}}
+            models[m]["total_calls"] += 1
+            models[m]["total_tokens_out"] += inf.get("tokens_out", 0) or 0
+            models[m]["total_latency_ms"] += inf.get("latency_ms", 0) or 0
+            tt = inf.get("task_type", "")
+            models[m]["task_types"][tt] = models[m]["task_types"].get(tt, 0) + 1
+        if models:
+            return {"models": models, "recent_inferences": inferences[:30]}
+
     store = _get_store()
     if store and store.model_stats:
         return {
             "models": store.get_model_summary(),
             "recent_inferences": store.get_recent_inferences(30),
         }
-    from app import db
     inferences = await db.query("SELECT * FROM inferences ORDER BY created_at DESC LIMIT 30")
     return {"models": {}, "recent_inferences": inferences}
 
 
 @router.get("/signals")
-async def get_signals():
+async def get_signals(window: Optional[str] = Query(None)):
+    from app import db
+    interval = _interval(window)
+
+    if window:
+        signals = await db.query(
+            f"SELECT * FROM signals WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"ORDER BY created_at DESC LIMIT 200"
+        )
+        findings = await db.query(
+            f"SELECT * FROM findings WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"ORDER BY created_at DESC LIMIT 50"
+        )
+        return {"signals": signals, "findings": findings, "total": len(signals)}
+
     store = _get_store()
     if store and store.recent_signals:
         return {
             "signals": store.get_recent_signals(50),
             "findings": store.get_recent_findings(20),
         }
-    from app import db
     signals = await db.query("SELECT * FROM signals ORDER BY created_at DESC LIMIT 50")
     findings = await db.query("SELECT * FROM findings ORDER BY created_at DESC LIMIT 20")
     return {"signals": signals, "findings": findings}
@@ -66,16 +133,28 @@ async def get_clusters():
 
 
 @router.get("/history/inferences")
-async def get_inference_history(limit: int = 100):
-    """Historical inferences from database — survives restarts."""
+async def get_inference_history(limit: int = 100, window: Optional[str] = Query(None)):
     from app import db
-    rows = await db.query("SELECT * FROM inferences ORDER BY created_at DESC LIMIT $1", limit)
+    if window:
+        interval = _interval(window)
+        rows = await db.query(
+            f"SELECT * FROM inferences WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"ORDER BY created_at DESC LIMIT $1", limit
+        )
+    else:
+        rows = await db.query("SELECT * FROM inferences ORDER BY created_at DESC LIMIT $1", limit)
     return {"inferences": rows, "source": "database"}
 
 
 @router.get("/history/remediations")
-async def get_remediation_history(limit: int = 50):
-    """Remediation audit trail from database."""
+async def get_remediation_history(limit: int = 50, window: Optional[str] = Query(None)):
     from app import db
-    rows = await db.query("SELECT * FROM remediations ORDER BY created_at DESC LIMIT $1", limit)
+    if window:
+        interval = _interval(window)
+        rows = await db.query(
+            f"SELECT * FROM remediations WHERE created_at >= NOW() - INTERVAL '{interval}' "
+            f"ORDER BY created_at DESC LIMIT $1", limit
+        )
+    else:
+        rows = await db.query("SELECT * FROM remediations ORDER BY created_at DESC LIMIT $1", limit)
     return {"remediations": rows, "source": "database"}

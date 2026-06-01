@@ -83,7 +83,7 @@ function relativeTime(ts: string): string {
 
 export default function FleetOverview() {
   const navigate = useNavigate();
-  const { since, sinceISO } = useTimeRange();
+  const { range } = useTimeRange();
 
   /* SSE live state */
   const [live, setLive] = useState<StreamState | null>(null);
@@ -130,11 +130,11 @@ export default function FleetOverview() {
 
     async function fetchAll() {
       try {
-        const sinceParam = `since=${encodeURIComponent(sinceISO())}`;
+        const windowParam = `window=${range.key}`;
         const [clRes, sigRes, agRes] = await Promise.all([
           fetch('/api/v1/observatory/clusters'),
-          fetch(`/api/v1/observatory/signals?${sinceParam}`),
-          fetch(`/api/v1/observatory/agents?${sinceParam}`),
+          fetch(`/api/v1/observatory/signals?${windowParam}`),
+          fetch(`/api/v1/observatory/agents?${windowParam}`),
         ]);
         if (cancelled) return;
         const clData = await clRes.json();
@@ -167,7 +167,7 @@ export default function FleetOverview() {
     fetchAll();
     const poll = setInterval(fetchAll, 30000);
     return () => { cancelled = true; clearInterval(poll); };
-  }, [sinceISO]);
+  }, [range.key]);
 
   /* ----- Derived values ----- */
   const m = live?.metrics;
@@ -202,13 +202,8 @@ export default function FleetOverview() {
   const microModels = modelEntries.filter(([name]) => isMicroModel(name));
   const macroModels = modelEntries.filter(([name]) => !isMicroModel(name));
 
-  /* Recent signals — last 10 */
-  const cutoff = since();
-  const filteredSignals = (signals ?? []).filter(s => {
-    const ts = s.timestamp;
-    return ts ? new Date(ts).getTime() >= cutoff : true;
-  });
-  const recentSignals = filteredSignals.slice(-10).reverse();
+  /* Recent signals — last 10 (backend already filters by window) */
+  const recentSignals = (signals ?? []).slice(-10).reverse();
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">

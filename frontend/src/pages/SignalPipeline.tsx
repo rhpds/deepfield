@@ -54,7 +54,7 @@ function outcomeStyle(outcome: string) {
 /* ------------------------------------------------------------------ */
 
 export default function SignalPipeline() {
-  const { since, sinceISO } = useTimeRange();
+  const { range } = useTimeRange();
 
   /* SSE live state */
   const [metrics, setMetrics] = useState<StreamMetrics>({});
@@ -96,7 +96,7 @@ export default function SignalPipeline() {
 
     async function fetchAgents() {
       try {
-        const resp = await fetch(`/api/v1/observatory/agents?since=${encodeURIComponent(sinceISO())}`);
+        const resp = await fetch(`/api/v1/observatory/agents?window=${range.key}`);
         if (cancelled) return;
         const data = await resp.json();
         if (data.agents) {
@@ -127,13 +127,6 @@ export default function SignalPipeline() {
     return () => { cancelled = true; clearInterval(poll); };
   }, []);
 
-  /* ----- Filter decisions by time range ----- */
-  const cutoff = since();
-  const filteredDecisions = decisions.filter(d => {
-    const ts = d.timestamp;
-    return ts ? new Date(ts).getTime() >= cutoff : true;
-  });
-
   /* ----- Derived ----- */
   const agentEntries = agents ? Object.entries(agents) : [];
   const rawSignals = metrics.raw_signals ?? 0;
@@ -151,7 +144,7 @@ export default function SignalPipeline() {
     { label: 'Insights', value: `${inferenceCompleted.toLocaleString()} completed` },
   ];
 
-  const recentDecisions = filteredDecisions.slice(-20).reverse();
+  const recentDecisions = decisions.slice(-20).reverse();
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
@@ -227,7 +220,7 @@ export default function SignalPipeline() {
                 : 0;
 
               const isSelected = selectedAgent === name;
-              const agentDecisions = filteredDecisions.filter(d => d.filter_name === name);
+              const agentDecisions = decisions.filter(d => d.filter_name === name);
 
               return (
                 <div key={name}>

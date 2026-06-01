@@ -106,7 +106,7 @@ function normalizeSignal(raw: unknown): RawSignal | null {
 
 export default function Incidents() {
   const navigate = useNavigate();
-  const { since, sinceISO } = useTimeRange();
+  const { range } = useTimeRange();
 
   const [signals, setSignals] = useState<RawSignal[] | null>(null);
   const [inferences, setInferences] = useState<Inference[]>([]);
@@ -117,9 +117,9 @@ export default function Incidents() {
   const fetchAll = useCallback(async () => {
     try {
       const [sigRes, infRes, remRes] = await Promise.all([
-        fetch(`/api/v1/observatory/signals?since=${encodeURIComponent(sinceISO())}`),
-        fetch(`/api/v1/observatory/history/inferences?since=${encodeURIComponent(sinceISO())}`),
-        fetch(`/api/v1/observatory/history/remediations?since=${encodeURIComponent(sinceISO())}`),
+        fetch(`/api/v1/observatory/signals?window=${range.key}`),
+        fetch(`/api/v1/observatory/history/inferences?window=${range.key}`),
+        fetch(`/api/v1/observatory/history/remediations?window=${range.key}`),
       ]);
 
       const sigData = await sigRes.json();
@@ -143,7 +143,7 @@ export default function Incidents() {
     } catch {
       /* network error — keep stale data */
     }
-  }, []);
+  }, [range.key]);
 
   useEffect(() => {
     fetchAll();
@@ -151,27 +151,12 @@ export default function Incidents() {
     return () => clearInterval(poll);
   }, [fetchAll]);
 
-  /* ----- Filter data by time range ----- */
-  const cutoff = since();
-  const filteredSignals = (signals ?? []).filter(s => {
-    const ts = s.timestamp;
-    return ts ? new Date(ts).getTime() >= cutoff : true;
-  });
-  const filteredInferences = inferences.filter(inf => {
-    const ts = inf.timestamp;
-    return ts ? new Date(ts).getTime() >= cutoff : true;
-  });
-  const filteredRemediations = remediations.filter(rem => {
-    const ts = rem.timestamp;
-    return ts ? new Date(ts).getTime() >= cutoff : true;
-  });
-
-  /* ----- Build incidents (group signals by namespace) ----- */
+  /* ----- Build incidents (group signals by namespace, backend already filters by window) ----- */
   const incidents: Incident[] = (() => {
     if (!signals) return [];
 
     const groups: Record<string, RawSignal[]> = {};
-    for (const sig of filteredSignals) {
+    for (const sig of signals) {
       const ns = sig.namespace ?? 'unknown';
       if (!groups[ns]) groups[ns] = [];
       groups[ns].push(sig);
@@ -190,9 +175,9 @@ export default function Incidents() {
         );
 
         // Match remediation by namespace
-        const rem = filteredRemediations.find((r) => r.namespace === namespace);
+        const rem = remediations.find((r) => r.namespace === namespace);
         // Match inference — look for namespace mention in prompt or output
-        const inf = filteredInferences.find(
+        const inf = inferences.find(
           (i) =>
             (i.prompt && i.prompt.includes(namespace)) ||
             (i.output && i.output.includes(namespace)),
@@ -226,7 +211,7 @@ export default function Incidents() {
     return isHighSev && isRecent;
   }).length;
 
-  const resolvedCount = filteredRemediations.filter((r) => r.status === 'ok').length;
+  const resolvedCount = remediations.filter((r) => r.status === 'ok').length;
 
   const avgResponseTime = (() => {
     // Compute average gap between signal timestamp and remediation timestamp per namespace
@@ -410,7 +395,7 @@ export default function Incidents() {
           Remediation History
         </div>
 
-        {filteredRemediations.length === 0 ? (
+        {remediations.length === 0 ? (
           <div className="text-sm text-[#6A6E73]">No remediations executed</div>
         ) : (
           <div className="overflow-x-auto">
@@ -425,7 +410,7 @@ export default function Incidents() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRemediations.map((rem, i) => (
+                {remediations.map((rem, i) => (
                   <tr
                     key={`${rem.namespace}-${rem.timestamp}-${i}`}
                     className="border-b border-[#2e2e2e] hover:bg-[#1a1a1a]"

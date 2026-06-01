@@ -52,7 +52,7 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 export default function LiveFlow() {
-  const { since } = useTimeRange();
+  const { range } = useTimeRange();
 
   const [live, setLive] = useState<LiveState | null>(null);
   const latestSSE = useRef<LiveState | null>(null);
@@ -77,7 +77,7 @@ export default function LiveFlow() {
   }, [flushSSE]);
 
   const m = live?.metrics ?? {};
-  const cutoff = since();
+  const cutoff = Date.now() - range.ms;
   const filteredLog = (live?.agent_log ?? []).filter(ev => {
     const ts = ev.ts;
     return ts ? new Date(ts).getTime() >= cutoff : true;

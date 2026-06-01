@@ -65,7 +65,7 @@ function relativeTime(ts: string): string {
 export default function ClusterDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { since, sinceISO } = useTimeRange();
+  const { range } = useTimeRange();
 
   const [cluster, setCluster] = useState<ClusterData | null>(null);
   const [signals, setSignals] = useState<ObsSignal[] | null>(null);
@@ -79,7 +79,7 @@ export default function ClusterDetail() {
       try {
         const [clRes, sigRes] = await Promise.all([
           fetch('/api/v1/observatory/clusters'),
-          fetch(`/api/v1/observatory/signals?since=${encodeURIComponent(sinceISO())}`),
+          fetch(`/api/v1/observatory/signals?window=${range.key}`),
         ]);
         if (cancelled) return;
 
@@ -110,19 +110,12 @@ export default function ClusterDetail() {
     fetchData();
     const poll = setInterval(fetchData, 5000);
     return () => { cancelled = true; clearInterval(poll); };
-  }, [id]);
+  }, [id, range.key]);
 
-  /* ----- Filter signals by time range ----- */
-  const cutoff = since();
-  const filteredSignals = (signals ?? []).filter(s => {
-    const ts = s.timestamp;
-    return ts ? new Date(ts).getTime() >= cutoff : true;
-  });
-
-  /* ----- Derived ----- */
+  /* ----- Derived (backend already filters by window) ----- */
   const nsEntries = cluster ? Object.entries(cluster.namespaces ?? {}) : [];
   const maxNsCount = Math.max(...nsEntries.map(([, c]) => c), 1);
-  const clusterSignals = filteredSignals.slice(-15).reverse();
+  const clusterSignals = (signals ?? []).slice(-15).reverse();
 
   /* Pod status bar */
   const totalPods = cluster?.total_pods ?? 0;
