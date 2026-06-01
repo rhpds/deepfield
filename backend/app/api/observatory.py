@@ -50,6 +50,18 @@ async def get_agents(window: Optional[str] = Query(None)):
             if mapped in agents[name]:
                 agents[name][mapped] += r["cnt"]
 
+        # Estimate kept count from in-memory ratio (keep decisions not persisted to DB)
+        store = _get_store()
+        if store and store.agent_stats:
+            for name, db_stats in agents.items():
+                mem = store.agent_stats.get(name)
+                if mem and mem.total_evaluated > 0:
+                    keep_ratio = mem.kept / mem.total_evaluated
+                    db_actionable = db_stats["total_evaluated"]
+                    estimated_total = int(db_actionable / max(1 - keep_ratio, 0.01))
+                    db_stats["kept"] = estimated_total - db_actionable
+                    db_stats["total_evaluated"] = estimated_total
+
         decisions = await db.query(
             f"SELECT * FROM decisions WHERE created_at >= NOW() - INTERVAL '{interval}' "
             f"ORDER BY created_at DESC LIMIT 50"
