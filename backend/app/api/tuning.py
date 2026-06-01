@@ -1,9 +1,17 @@
 """Tuning API — view and manage adaptive tuning proposals and cluster profiles."""
 
+import time
+import threading
+import logging
 from fastapi import APIRouter, Query
 from typing import Optional
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/tuning", tags=["tuning"])
+
+_eval_cache: dict = {}
+_eval_lock = threading.Lock()
+_CACHE_TTL = 300  # 5 minutes
 
 
 @router.get("/proposals")
@@ -56,7 +64,12 @@ async def get_profile(cluster_id: str):
 
 @router.get("/evaluate/{cluster_id}")
 async def evaluate_cluster(cluster_id: str):
-    """Run EDD rubrics against accumulated data for a cluster."""
+    """Run EDD rubrics against accumulated data. Cached for 5 minutes."""
+    with _eval_lock:
+        cached = _eval_cache.get(cluster_id)
+        if cached and time.monotonic() - cached["_fetched_at"] < _CACHE_TTL:
+            return cached["result"]
+
     from app import db
     from app.analysis.evaluator import evaluate_pipeline
 
@@ -114,4 +127,6 @@ async def evaluate_cluster(cluster_id: str):
         cross_resource_dedup=0,
         critical_deduped=0,
     )
+    with _eval_lock:
+        _eval_cache[cluster_id] = {"result": result, "_fetched_at": time.monotonic()}
     return result
