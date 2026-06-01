@@ -65,3 +65,35 @@ async def get_results():
 @router.get("/results/{scenario_id}")
 async def get_result(scenario_id: str):
     return _results.get(scenario_id, {"status": "not_run"})
+
+
+@router.post("/run-all")
+async def run_all():
+    """Run all scenarios sequentially in background. Poll /results for status."""
+    from app.testing.scenario_runner import SCENARIOS
+    if any(_running.get(sid) for sid in SCENARIOS):
+        return {"status": "already_running"}
+
+    for sid in SCENARIOS:
+        _running[sid] = True
+        _results[sid] = {"scenario_id": sid, "status": "queued", "name": SCENARIOS[sid].name}
+
+    def _run_all_thread():
+        from app.testing.scenario_runner import ScenarioRunner
+        cluster_url = os.environ.get("CLUSTER_1_API_URL", "")
+        cluster_token = os.environ.get("CLUSTER_1_TOKEN", "")
+        runner = ScenarioRunner(cluster_api_url=cluster_url, token=cluster_token)
+        loop = asyncio.new_event_loop()
+        for sid in SCENARIOS:
+            _results[sid]["status"] = "running"
+            try:
+                result = loop.run_until_complete(runner.run_scenario(sid))
+                _results[sid] = result
+            except Exception as e:
+                _results[sid] = {"scenario_id": sid, "status": "error", "error": str(e)}
+            _running[sid] = False
+        loop.close()
+
+    t = threading.Thread(target=_run_all_thread, daemon=True)
+    t.start()
+    return {"status": "started", "scenarios": list(SCENARIOS.keys())}
