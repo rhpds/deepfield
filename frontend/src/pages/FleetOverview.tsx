@@ -179,7 +179,7 @@ export default function FleetOverview() {
   /* Funnel values — use cumulative totals, not window metrics */
   const t = live?.totals;
   const rawSignals = t?.raw_signals ?? 0;
-  const retained = rawSignals - (t?.dropped ?? 0);
+  const retained = Math.max(0, rawSignals - (t?.dropped ?? 0));
   const findingsCount = t?.findings ?? 0;
   const reasoningTasks = t?.reasoning_tasks ?? 0;
   const inferenceCompleted = t?.inference_calls ?? 0;
