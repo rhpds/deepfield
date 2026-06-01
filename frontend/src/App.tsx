@@ -13,6 +13,7 @@ import ClusterDetail from './pages/ClusterDetail';
 import LivePanel from './pages/LivePanel';
 import Incidents from './pages/Incidents';
 import Tuning from './pages/Tuning';
+import Scenarios from './pages/Scenarios';
 
 function AppLayout() {
   const navItems = [
@@ -22,7 +23,7 @@ function AppLayout() {
     { to: '/llm', label: 'LLM' },
     { to: '/incidents', label: 'Incidents' },
     { to: '/tuning', label: 'Quality' },
-    { to: '/simulator', label: 'Simulator' },
+    { to: '/scenarios', label: 'Scenarios' },
   ];
 
   return (
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/cluster/:id" element={<ClusterDetail />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/tuning" element={<Tuning />} />
+          <Route path="/scenarios" element={<Scenarios />} />
           <Route path="/simulator" element={<LivePanel />} />
         </Route>
       </Routes>
