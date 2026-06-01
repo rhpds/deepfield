@@ -144,6 +144,7 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
                 "tier": "macro" if f.severity in ("critical", "high") else "micro",
                 "namespaces": f.namespaces,
                 "clusters": [str(c)[:8] for c in f.clusters],
+                "signals": f.evidence.get("signals", [])[:20],
             },
         ))
 

@@ -32,15 +32,17 @@ class IncidentManager:
         if existing_id and existing_id in self._incidents:
             inc = self._incidents[existing_id]
             if inc["status"] == "open":
-                inc["signal_count"] += 1
+                existing_ids = {s.get("signal_id") for s in inc["evidence"].get("signals", [])}
+                if signal_id not in existing_ids:
+                    inc["signal_count"] += 1
+                    inc["evidence"].setdefault("signals", []).append({
+                        "signal_id": signal_id, "type": signal_type,
+                        "namespace": namespace, "resource": resource_name,
+                        "severity": severity, "ts": datetime.now(timezone.utc).isoformat(),
+                    })
                 inc["last_seen"] = datetime.now(timezone.utc).isoformat()
                 if SEV_RANK.get(severity, 0) > SEV_RANK.get(inc["severity"], 0):
                     inc["severity"] = severity
-                inc["evidence"].setdefault("signals", []).append({
-                    "signal_id": signal_id, "type": signal_type,
-                    "namespace": namespace, "resource": resource_name,
-                    "severity": severity, "ts": datetime.now(timezone.utc).isoformat(),
-                })
                 inc["updated_at"] = datetime.now(timezone.utc).isoformat()
                 return inc
 
