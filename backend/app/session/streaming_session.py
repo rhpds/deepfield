@@ -614,6 +614,36 @@ class StreamingSession:
             if task.task_type == "root_cause_analysis":
                 mgr.add_inference(namespace=ns, cluster_id=cluster,
                                   task_type="root_cause_analysis", model=model, output=output)
+                import json
+                try:
+                    parsed = json.loads(output.strip().lstrip("```json").rstrip("```").strip())
+                    if not parsed:
+                        start = output.find("{")
+                        if start >= 0:
+                            parsed = json.loads(output[start:])
+                except (json.JSONDecodeError, ValueError):
+                    parsed = None
+                if parsed:
+                    rem = parsed.get("remediation", {})
+                    if isinstance(rem, dict):
+                        for step in rem.get("steps", []):
+                            mgr.add_remediation_option(
+                                namespace=ns, cluster_id=cluster,
+                                action=step, risk=rem.get("risk", "medium"), source="rca",
+                            )
+                        for cmd in rem.get("commands", []):
+                            mgr.add_remediation_option(
+                                namespace=ns, cluster_id=cluster,
+                                action=f"Run: {cmd}", command=cmd,
+                                risk=rem.get("risk", "low"), source="rca",
+                            )
+                    if parsed.get("category"):
+                        mgr.add_classification(
+                            namespace=ns, cluster_id=cluster,
+                            failure_class=str(parsed["category"]),
+                            confidence=parsed.get("confidence", 0.7),
+                            model=model,
+                        )
 
             if task.task_type == "suggest_remediation" and output:
                 import json
