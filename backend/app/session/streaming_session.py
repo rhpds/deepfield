@@ -574,95 +574,124 @@ class StreamingSession:
             logger.warning("Profile update failed: %s", e)
 
     def _feed_incident(self, task, model: str, output: str):
-        """Feed inference results to the incident manager."""
-        logger.warning("_feed_incident called: task_type=%s context_keys=%s",
-                       task.task_type, list(task.context.keys()) if task.context else [])
+        """Feed macro-agent RCA results into the incident manager.
+
+        Only root_cause_analysis (macro tier) creates incidents. The RCA output
+        contains the full analysis — root cause, category, evidence chain,
+        remediation steps — and includes ALL correlated signals from the finding.
+
+        Micro-agent results (classify, explain, suggest) enrich existing incidents
+        but never create new ones.
+        """
         try:
+            import json as _json
             from app.api.incidents import get_manager
             mgr = get_manager()
+
             ns = task.context.get("namespace") or ""
             if not ns and task.context.get("namespaces"):
                 nsl = task.context["namespaces"]
                 ns = nsl[0] if isinstance(nsl, list) and nsl else ""
-            cluster = task.context.get("cluster") or task.context.get("clusters", ["infra01"])[0] if task.context.get("clusters") else "infra01"
+            cluster_list = task.context.get("clusters", [])
+            cluster = cluster_list[0] if cluster_list else "infra01"
             if not ns:
-                logger.debug("No namespace in task context: %s", list(task.context.keys()))
                 return
 
-            mgr.process_signal(
-                namespace=ns, cluster_id=cluster,
-                signal_type=task.context.get("finding_type", "unknown"),
-                severity=task.context.get("severity", "medium"),
-                signal_id=str(task.task_id)[:8],
-                resource_name=task.context.get("resource_name", ""),
-            )
-
-            if task.task_type == "classify_signal" and output:
-                import json
-                try:
-                    parsed = json.loads(output.strip().strip("`").strip())
-                    if parsed.get("failure_class"):
-                        mgr.add_classification(
-                            namespace=ns, cluster_id=cluster,
-                            failure_class=parsed["failure_class"],
-                            confidence=parsed.get("confidence", 0.5),
-                            model=model,
-                        )
-                except (json.JSONDecodeError, AttributeError):
-                    pass
-
             if task.task_type == "root_cause_analysis":
+                # RCA creates the incident with all correlated signals
+                all_signals = task.context.get("signals", [])
+                signal_count = task.context.get("signal_count", len(all_signals))
+
+                # Create incident with the first signal
+                inc = mgr.process_signal(
+                    namespace=ns, cluster_id=cluster,
+                    signal_type=task.context.get("finding_type", "namespace_correlation"),
+                    severity=task.context.get("severity", "high"),
+                    signal_id=str(task.task_id)[:8],
+                    resource_name=f"{signal_count} correlated signals",
+                )
+
+                # Append all correlated signals from the finding evidence
+                for sig in all_signals:
+                    if isinstance(sig, dict):
+                        mgr.process_signal(
+                            namespace=ns, cluster_id=cluster,
+                            signal_type=sig.get("signal_type", sig.get("type", "unknown")),
+                            severity=sig.get("severity", "medium"),
+                            signal_id=sig.get("signal_id", str(hash(str(sig)))[:8]),
+                            resource_name=sig.get("resource_name", sig.get("resource", "")),
+                        )
+
+                # Attach RCA output
                 mgr.add_inference(namespace=ns, cluster_id=cluster,
                                   task_type="root_cause_analysis", model=model, output=output)
-                import json
+
+                # Parse structured RCA output for classification + remediation
+                parsed = None
                 try:
-                    parsed = json.loads(output.strip().lstrip("```json").rstrip("```").strip())
-                    if not parsed:
-                        start = output.find("{")
-                        if start >= 0:
-                            parsed = json.loads(output[start:])
-                except (json.JSONDecodeError, ValueError):
-                    parsed = None
+                    cleaned = output.strip().lstrip("`").lstrip("json").lstrip("`").strip()
+                    start = cleaned.find("{")
+                    if start >= 0:
+                        parsed = _json.loads(cleaned[start:])
+                except (ValueError, _json.JSONDecodeError):
+                    pass
+
                 if parsed:
+                    if parsed.get("category"):
+                        mgr.add_classification(
+                            namespace=ns, cluster_id=cluster,
+                            failure_class=str(parsed["category"]),
+                            confidence=float(parsed.get("confidence", 0.7)),
+                            model=model,
+                        )
                     rem = parsed.get("remediation", {})
                     if isinstance(rem, dict):
                         for step in rem.get("steps", []):
                             mgr.add_remediation_option(
                                 namespace=ns, cluster_id=cluster,
-                                action=step, risk=rem.get("risk", "medium"), source="rca",
+                                action=step, risk=str(rem.get("risk", "medium")), source="rca",
                             )
                         for cmd in rem.get("commands", []):
                             mgr.add_remediation_option(
                                 namespace=ns, cluster_id=cluster,
                                 action=f"Run: {cmd}", command=cmd,
-                                risk=rem.get("risk", "low"), source="rca",
+                                risk=str(rem.get("risk", "low")), source="rca",
                             )
-                    if parsed.get("category"):
+
+            elif task.task_type == "classify_signal" and output:
+                # Micro: enrich existing incident with classification (don't create new)
+                try:
+                    parsed = _json.loads(output.strip().strip("`").strip())
+                    if parsed.get("failure_class"):
                         mgr.add_classification(
                             namespace=ns, cluster_id=cluster,
-                            failure_class=str(parsed["category"]),
-                            confidence=parsed.get("confidence", 0.7),
+                            failure_class=parsed["failure_class"],
+                            confidence=float(parsed.get("confidence", 0.5)),
                             model=model,
                         )
+                except (ValueError, _json.JSONDecodeError, AttributeError):
+                    pass
 
-            if task.task_type == "suggest_remediation" and output:
-                import json
+            elif task.task_type == "suggest_remediation" and output:
+                # Micro: enrich existing incident with remediation option
                 try:
-                    parsed = json.loads(output.strip().strip("`").strip())
+                    parsed = _json.loads(output.strip().strip("`").strip())
                     if parsed.get("fix"):
                         mgr.add_remediation_option(
                             namespace=ns, cluster_id=cluster,
                             action=parsed["fix"],
                             command=parsed.get("command"),
-                            risk=parsed.get("risk", "medium"),
-                            source="llm",
+                            risk=str(parsed.get("risk", "medium")),
+                            source="micro",
                         )
-                except (json.JSONDecodeError, AttributeError):
+                except (ValueError, _json.JSONDecodeError, AttributeError):
                     pass
 
-            if task.task_type == "explain_signal":
+            elif task.task_type == "explain_signal":
+                # Micro: enrich existing incident with explanation
                 mgr.add_inference(namespace=ns, cluster_id=cluster,
                                   task_type="explain_signal", model=model, output=output)
+
         except Exception as e:
             logger.debug("Incident feed error: %s", e)
 
