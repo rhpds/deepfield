@@ -629,10 +629,19 @@ class StreamingSession:
                 # Parse structured RCA output for classification + remediation
                 parsed = None
                 try:
-                    cleaned = output.strip().lstrip("`").lstrip("json").lstrip("`").strip()
+                    import re
+                    cleaned = re.sub(r'<think>.*?</think>', '', output, flags=re.DOTALL)
+                    cleaned = cleaned.replace('```json', '').replace('```', '').strip()
                     start = cleaned.find("{")
                     if start >= 0:
-                        parsed = _json.loads(cleaned[start:])
+                        json_str = cleaned[start:]
+                        try:
+                            parsed = _json.loads(json_str)
+                        except _json.JSONDecodeError:
+                            opens = json_str.count("{") - json_str.count("}")
+                            json_str += "}" * max(opens, 0)
+                            json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+                            parsed = _json.loads(json_str)
                 except (ValueError, _json.JSONDecodeError):
                     pass
 

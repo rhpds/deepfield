@@ -43,9 +43,26 @@ function relativeTime(ts: string): string {
 
 function tryParseJSON(text: string): Record<string, unknown> | null {
   try {
-    const cleaned = text.replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
+    // Strip markdown fences, think blocks, and prose preamble
+    let cleaned = text
+      .replace(/^```json\s*/m, '').replace(/```\s*$/m, '')
+      .replace(/<think>[\s\S]*?<\/think>/g, '')
+      .trim();
     const start = cleaned.indexOf('{');
-    if (start >= 0) return JSON.parse(cleaned.substring(start));
+    if (start >= 0) {
+      const jsonStr = cleaned.substring(start);
+      try { return JSON.parse(jsonStr); } catch { /* truncated — try fixing */ }
+      // Fix truncated JSON by closing open braces/brackets
+      let fixed = jsonStr;
+      const opens = (fixed.match(/{/g) || []).length;
+      const closes = (fixed.match(/}/g) || []).length;
+      for (let i = 0; i < opens - closes; i++) fixed += '}';
+      const openB = (fixed.match(/\[/g) || []).length;
+      const closeB = (fixed.match(/]/g) || []).length;
+      for (let i = 0; i < openB - closeB; i++) fixed += ']';
+      fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+      try { return JSON.parse(fixed); } catch { /* give up */ }
+    }
   } catch { /* */ }
   return null;
 }
