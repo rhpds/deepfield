@@ -50,6 +50,18 @@ async def get_agents(window: Optional[str] = Query(None)):
             if mapped in agents[name]:
                 agents[name][mapped] += r["cnt"]
 
+        # Add agents that exist in pipeline but have no DB decisions
+        ALL_AGENTS = [
+            "FailureClassifierAgent", "EventClassifierAgent", "PodHealthAgent",
+            "RouteHealthAgent", "PVCHealthAgent", "NodePressureAgent",
+            "NamespaceQuotaAgent", "KServeEndpointAgent", "KafkaLagAgent",
+            "LaunchpadSessionAgent", "StarGateEvaluationAgent",
+            "TransientSuppressorAgent", "DedupeAgent",
+        ]
+        for agent_name in ALL_AGENTS:
+            if agent_name not in agents:
+                agents[agent_name] = {"total_evaluated": 0, "escalated": 0, "kept": 0, "dropped": 0, "suppressed": 0, "deduped": 0, "enriched": 0}
+
         # Estimate kept count from in-memory ratio (keep decisions not persisted to DB)
         store = _get_store()
         if store and store.agent_stats:
