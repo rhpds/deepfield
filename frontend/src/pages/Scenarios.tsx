@@ -187,6 +187,17 @@ export default function Scenarios() {
                         </div>
                       </div>
 
+                      {/* Timing */}
+                      {result.started_at && (
+                        <div className="flex gap-4 text-xs text-[#6A6E73]">
+                          <span>Started: {new Date(result.started_at).toLocaleTimeString()}</span>
+                          {result.completed_at && <span>Completed: {new Date(result.completed_at).toLocaleTimeString()}</span>}
+                          {result.started_at && result.completed_at && (
+                            <span>Duration: {Math.round((new Date(result.completed_at).getTime() - new Date(result.started_at).getTime()) / 1000)}s</span>
+                          )}
+                        </div>
+                      )}
+
                       {/* EDD Checks */}
                       {result.checks.length > 0 && (
                         <div>
@@ -204,6 +215,51 @@ export default function Scenarios() {
                               </div>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Incident Summary */}
+                      {result.incident && (
+                        <div>
+                          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-2">Incident Created</div>
+                          <div className="bg-[#1a1a1a] rounded-lg p-4 space-y-2">
+                            <div className="flex items-center gap-3 text-sm">
+                              <span className="text-white font-semibold">{(result.incident as Record<string,unknown>).namespace as string}</span>
+                              {(result.incident as Record<string,unknown>).failure_class ? (
+                                <span className="text-xs px-2 py-0.5 rounded bg-[#F0AB00]/20 text-[#F0AB00]">
+                                  {String((result.incident as Record<string,unknown>).failure_class)}
+                                </span>
+                              ) : null}
+                              <span className="text-xs text-[#6A6E73]">
+                                {(result.incident as Record<string,unknown>).signal_count as number} signals ·
+                                {((result.incident as Record<string,unknown>).remediation_options as unknown[])?.length || 0} remediation options
+                              </span>
+                            </div>
+                            {(result.incident as Record<string,unknown>).rca_output ? (() => {
+                              const rca = (result.incident as Record<string,unknown>).rca_output as string;
+                              const cleaned = rca.replace(/```json/g, '').replace(/```/g, '').trim();
+                              const start = cleaned.indexOf('{');
+                              if (start >= 0) {
+                                try {
+                                  const parsed = JSON.parse(cleaned.substring(start));
+                                  return (
+                                    <div className="text-xs text-[#a0a0a0]">
+                                      <span className="text-[#6A6E73]">Root Cause: </span>
+                                      {String(parsed.root_cause || rca).substring(0, 200)}
+                                    </div>
+                                  );
+                                } catch { /* fall through */ }
+                              }
+                              return <div className="text-xs text-[#a0a0a0]">{rca.substring(0, 200)}</div>;
+                            })() : null}
+                          </div>
+                        </div>
+                      )}
+
+                      {result.checks.length === 0 && !result.incident && !result.error && (
+                        <div className="text-sm text-[#6A6E73]">
+                          Pipeline processed the injection but no incident with RCA was found within the timeout.
+                          The incident may still appear — check the Incidents page.
                         </div>
                       )}
 

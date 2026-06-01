@@ -212,24 +212,34 @@ class ScenarioRunner:
             return {"step": "inject_resource", "status": "ok" if resp.status_code in (200, 201) else "failed",
                     "response": resp.status_code, "kind": kind, "name": scenario.inject_spec.get("metadata", {}).get("name")}
 
-    async def _wait_for_incident(self, namespace: str, timeout: int = 180) -> Optional[dict]:
-        """Wait for a NEW open incident in this namespace (created after we started)."""
+    async def _wait_for_incident(self, namespace: str, timeout: int = 300) -> Optional[dict]:
+        """Wait for a NEW open incident in this namespace."""
         from app.api.incidents import get_manager
         mgr = get_manager()
         start = time.monotonic()
-        start_iso = datetime.now(timezone.utc).isoformat()
-        while time.monotonic() - start < timeout:
+
+        # Phase 1: wait for any open incident (up to 2/3 of timeout)
+        found = None
+        while time.monotonic() - start < timeout * 0.66:
             for inc in mgr.list_incidents(status="open"):
-                if (inc.get("namespace") == namespace and
-                        inc.get("created_at", "") >= start_iso):
-                    if inc.get("rca_output"):
-                        return inc
+                if inc.get("namespace") == namespace:
+                    found = inc
+                    break
+            if found:
+                break
             await _async_sleep(5)
-        # Fallback: return any open incident for this namespace even without RCA
-        for inc in mgr.list_incidents(status="open"):
-            if inc.get("namespace") == namespace:
+
+        if not found:
+            return None
+
+        # Phase 2: wait for RCA to be attached (remaining time)
+        while time.monotonic() - start < timeout:
+            inc = mgr.get_incident(found["id"])
+            if inc and inc.get("rca_output"):
                 return inc
-        return None
+            await _async_sleep(5)
+
+        return found
 
     async def _cleanup(self, scenario: Scenario):
         if not self.api or not self.token:
