@@ -1,0 +1,234 @@
+import { useState, useEffect } from 'react';
+
+interface RubricResult {
+  score: 'healthy' | 'warning' | 'failing';
+  checks: Array<[string, string]>;
+}
+
+interface EvalResult {
+  cluster_id: string;
+  timestamp: string;
+  overall: 'healthy' | 'warning' | 'failing';
+  rubrics: Record<string, RubricResult>;
+}
+
+interface Proposal {
+  proposal_id: string;
+  cluster_id: string;
+  category: string;
+  evidence: Record<string, unknown>;
+  impact_estimate: string;
+  confidence: number;
+  status: string;
+  created_at: string;
+}
+
+interface ProfileData {
+  cluster_id: string;
+  confidence: number;
+  dedup_windows: Record<string, number>;
+  namespace_noise_scores: Record<string, number>;
+  namespace_dampen_thresholds: Record<string, number>;
+  baseline_signals_per_second: number;
+  model_health: Record<string, { calls: number; errors: number; error_rate: number; avg_latency: number }>;
+}
+
+const SCORE_COLORS = { healthy: '#3E8635', warning: '#F0AB00', failing: '#C9190B' };
+const RUBRIC_LABELS: Record<string, string> = {
+  compression_quality: 'Compression',
+  classification_accuracy: 'Classification',
+  inference_value: 'Inference',
+  signal_coverage: 'Coverage',
+  tuning_safety: 'Safety',
+};
+
+export default function Tuning() {
+  const [evaluation, setEvaluation] = useState<EvalResult | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [evalRes, propRes, profRes] = await Promise.all([
+          fetch('/api/v1/tuning/evaluate/infra01'),
+          fetch('/api/v1/tuning/proposals'),
+          fetch('/api/v1/tuning/profile/infra01'),
+        ]);
+        if (evalRes.ok) setEvaluation(await evalRes.json());
+        if (propRes.ok) { const d = await propRes.json(); setProposals(d.proposals || []); }
+        if (profRes.ok) setProfile(await profRes.json());
+      } catch { /* */ }
+      setLoading(false);
+    }
+    load();
+    const poll = setInterval(load, 30000);
+    return () => clearInterval(poll);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 animate-pulse space-y-6">
+        <div className="h-10 bg-[#212121] rounded w-48" />
+        <div className="grid grid-cols-5 gap-4">{[1,2,3,4,5].map(i => <div key={i} className="bg-[#212121] rounded-lg h-28" />)}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: 'Red Hat Display' }}>Pipeline Quality</h1>
+        <p className="text-sm text-[#6A6E73]">EDD rubrics — continuous evaluation of signal intelligence quality</p>
+      </div>
+
+      {/* Overall score */}
+      {evaluation && (
+        <div className="flex items-center gap-4">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">Overall</div>
+          <span className="text-lg font-bold px-4 py-1 rounded-full"
+            style={{ backgroundColor: `${SCORE_COLORS[evaluation.overall]}20`, color: SCORE_COLORS[evaluation.overall] }}>
+            {evaluation.overall.toUpperCase()}
+          </span>
+        </div>
+      )}
+
+      {/* Rubric cards */}
+      {evaluation && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {Object.entries(evaluation.rubrics).map(([key, rubric]) => (
+            <div key={key} className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4"
+              style={{ borderTop: `3px solid ${SCORE_COLORS[rubric.score]}` }}>
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mb-2">{RUBRIC_LABELS[key] || key}</div>
+              <div className="text-lg font-bold mb-3" style={{ color: SCORE_COLORS[rubric.score], fontFamily: 'Red Hat Display' }}>
+                {rubric.score.toUpperCase()}
+              </div>
+              <div className="space-y-1">
+                {rubric.checks.map(([name, level]) => (
+                  <div key={name} className="flex items-center gap-2 text-[10px]">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SCORE_COLORS[level as keyof typeof SCORE_COLORS] || '#6A6E73' }} />
+                    <span className="text-[#6A6E73]">{name.replace(/_/g, ' ')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Cluster Profile */}
+      {profile && (
+        <div className="border border-[#333] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+              Adaptive Profile — {profile.cluster_id}
+            </div>
+            <span className="text-xs text-[#6A6E73]">
+              Confidence: <span className="text-white font-bold">{(profile.confidence * 100).toFixed(0)}%</span>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {/* Dedup windows */}
+            <div>
+              <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Learned Dedup Windows</div>
+              {Object.keys(profile.dedup_windows).length === 0 ? (
+                <p className="text-xs text-[#6A6E73]">Learning... (default 60s)</p>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(profile.dedup_windows).map(([type, secs]) => (
+                    <div key={type} className="flex justify-between text-xs">
+                      <span className="text-[#6A6E73] truncate">{type}</span>
+                      <span className="text-white font-mono">{secs}s</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Noise scores */}
+            <div>
+              <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Namespace Noise Scores</div>
+              {Object.keys(profile.namespace_noise_scores).length === 0 ? (
+                <p className="text-xs text-[#6A6E73]">Learning...</p>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(profile.namespace_noise_scores)
+                    .filter(([, v]) => v > 0.05)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 8)
+                    .map(([ns, score]) => (
+                      <div key={ns} className="flex justify-between text-xs">
+                        <span className="text-[#6A6E73] truncate">{ns}</span>
+                        <span className="font-mono" style={{ color: score > 0.9 ? '#C9190B' : score > 0.5 ? '#F0AB00' : '#3E8635' }}>
+                          {(score * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Model health */}
+            <div>
+              <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Model Health</div>
+              {Object.keys(profile.model_health).length === 0 ? (
+                <p className="text-xs text-[#6A6E73]">No model data yet</p>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(profile.model_health).map(([model, h]) => (
+                    <div key={model} className="flex justify-between text-xs">
+                      <span className="text-[#6A6E73] truncate">{model.replace(/_/g, ' ')}</span>
+                      <span className="font-mono" style={{ color: (h.error_rate || 0) > 0.15 ? '#C9190B' : '#3E8635' }}>
+                        {((h.error_rate || 0) * 100).toFixed(0)}% err
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tuning Proposals */}
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+          Tuning Proposals ({proposals.length} pending)
+        </div>
+        {proposals.length === 0 ? (
+          <p className="text-sm text-[#6A6E73]">No pending proposals — system is stable or still learning</p>
+        ) : (
+          <div className="space-y-3">
+            {proposals.map(p => (
+              <div key={p.proposal_id} className="bg-[#1a1a1a] rounded-lg p-4 border-l-3"
+                style={{ borderLeft: `3px solid ${p.category === 'noise_resolution' ? '#F0AB00' : p.category === 'model_rotation' ? '#C9190B' : '#0071C5'}` }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-[#212121] text-[#6A6E73]">{p.category}</span>
+                    <span className="text-xs text-[#6A6E73]">confidence: {(p.confidence * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="px-3 py-1 rounded text-xs font-bold bg-[#3E8635] text-white hover:bg-[#2d6427]"
+                      onClick={() => fetch(`/api/v1/tuning/proposals/${p.proposal_id}/approve`, { method: 'POST' })}>
+                      Approve
+                    </button>
+                    <button className="px-3 py-1 rounded text-xs font-bold bg-[#333] text-[#6A6E73] hover:text-white"
+                      onClick={() => fetch(`/api/v1/tuning/proposals/${p.proposal_id}/reject`, { method: 'POST' })}>
+                      Reject
+                    </button>
+                  </div>
+                </div>
+                <p className="text-sm text-[#e0e0e0]">{p.impact_estimate}</p>
+                <div className="text-xs text-[#6A6E73] mt-1 font-mono">
+                  {JSON.stringify(p.evidence).slice(0, 150)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
