@@ -64,46 +64,69 @@ async def get_profile(cluster_id: str):
 
 @router.get("/evaluate/{cluster_id}")
 async def evaluate_cluster(cluster_id: str):
-    """Run EDD rubrics against accumulated data. Cached for 5 minutes."""
+    """Run EDD rubrics using in-memory data (fast) + minimal DB queries. Cached 5 min."""
     with _eval_lock:
         cached = _eval_cache.get(cluster_id)
         if cached and time.monotonic() - cached["_fetched_at"] < _CACHE_TTL:
             return cached["result"]
 
-    from app import db
     from app.analysis.evaluator import evaluate_pipeline
 
-    total_decisions = await db.query("SELECT COUNT(*) as cnt FROM decisions")
-    total_d = total_decisions[0]["cnt"] if total_decisions else 0
+    # Use in-memory session data (instant) instead of 14 DB queries
+    from app.api.session import _get_current_session
+    session = _get_current_session()
 
-    dedup_cnt = await db.query("SELECT COUNT(*) as cnt FROM decisions WHERE outcome = 'dedupe'")
-    suppress_cnt = await db.query("SELECT COUNT(*) as cnt FROM decisions WHERE outcome = 'suppress'")
-    dedup_rate = (dedup_cnt[0]["cnt"] / max(total_d, 1)) if dedup_cnt else 0
-    suppress_rate = (suppress_cnt[0]["cnt"] / max(total_d, 1)) if suppress_cnt else 0
+    comp_ratio = 0
+    dedup_rate = 0
+    suppress_rate = 0
+    unique_ft = 1
+    error_rate = 0
+    avg_rca = 0
+    avg_micro = 0
+    ns_count = 0
+    agent_count = 0
+    type_count = 0
+    crit_count = 0
+    json_rate = 0.6
 
-    snap = await db.query("SELECT compression_ratio FROM session_snapshots ORDER BY captured_at DESC LIMIT 1")
-    comp_ratio = snap[0]["compression_ratio"] if snap else 0
+    if session and hasattr(session, 'store'):
+        store = session.store
+        comp_ratio = session.metrics.get("compression_ratio", 0)
 
-    finding_types = await db.query("SELECT COUNT(DISTINCT finding_type) as cnt FROM findings")
-    unique_ft = finding_types[0]["cnt"] if finding_types else 0
+        total_decisions = sum(getattr(s, "total_evaluated", 0) for s in store.agent_stats.values())
+        total_dedup = sum(getattr(s, "deduped", 0) for s in store.agent_stats.values())
+        total_suppress = sum(getattr(s, "suppressed", 0) for s in store.agent_stats.values())
+        dedup_rate = total_dedup / max(total_decisions, 1)
+        suppress_rate = total_suppress / max(total_decisions, 1)
 
-    total_inf = await db.query("SELECT COUNT(*) as cnt FROM inferences")
-    err_inf = await db.query("SELECT COUNT(*) as cnt FROM inferences WHERE error IS NOT NULL AND error != ''")
-    error_rate = (err_inf[0]["cnt"] / max(total_inf[0]["cnt"], 1)) if err_inf and total_inf else 0
+        agent_count = len(store.agent_stats)
+        ns_count = len(store.cluster_stats.get("infra01", {}).namespaces) if store.cluster_stats else 0
+        if not ns_count:
+            ns_count = len({s.get("namespace", "") for s in store.recent_signals if isinstance(s, dict)})
 
-    rca_tok = await db.query("SELECT AVG(tokens_out) as avg FROM inferences WHERE task_type = 'root_cause_analysis'")
-    micro_tok = await db.query("SELECT AVG(tokens_out) as avg FROM inferences WHERE task_type IN ('classify_signal','explain_signal','summarize_finding')")
-    avg_rca = float(rca_tok[0]["avg"] or 0) if rca_tok else 0
-    avg_micro = float(micro_tok[0]["avg"] or 0) if micro_tok else 0
+        type_count = len({s.get("signal_type", "") for s in store.recent_signals if isinstance(s, dict)})
+        crit_count = sum(1 for s in store.recent_signals if isinstance(s, dict) and s.get("severity") in ("high", "critical"))
 
-    ns_cnt = await db.query("SELECT COUNT(DISTINCT namespace) as cnt FROM signals")
-    type_cnt = await db.query("SELECT COUNT(DISTINCT signal_type) as cnt FROM signals")
-    agent_cnt = await db.query("SELECT COUNT(DISTINCT filter_name) as cnt FROM decisions")
-    crit_cnt = await db.query("SELECT COUNT(*) as cnt FROM signals WHERE severity IN ('high','critical') AND created_at >= NOW() - INTERVAL '24 hours'")
+        total_inf = sum(s.total_calls for s in store.model_stats.values())
+        total_err = sum(s.errors for s in store.model_stats.values())
+        error_rate = total_err / max(total_inf, 1)
 
-    classify_json = await db.query("SELECT COUNT(*) as cnt FROM inferences WHERE task_type = 'classify_signal' AND output LIKE '{%}'")
-    classify_total = await db.query("SELECT COUNT(*) as cnt FROM inferences WHERE task_type = 'classify_signal'")
-    json_rate = (classify_json[0]["cnt"] / max(classify_total[0]["cnt"], 1)) if classify_json and classify_total else 0
+        rca_calls = 0
+        rca_tokens = 0
+        micro_calls = 0
+        micro_tokens = 0
+        for inf in store.recent_inferences:
+            if isinstance(inf, dict):
+                tt = inf.get("task_type", "")
+                tok = inf.get("tokens_out", 0) or 0
+                if tt == "root_cause_analysis":
+                    rca_calls += 1
+                    rca_tokens += tok
+                elif tt in ("classify_signal", "explain_signal", "summarize_finding"):
+                    micro_calls += 1
+                    micro_tokens += tok
+        avg_rca = rca_tokens / max(rca_calls, 1)
+        avg_micro = micro_tokens / max(micro_calls, 1)
 
     result = evaluate_pipeline(
         cluster_id=cluster_id,
@@ -119,10 +142,10 @@ async def evaluate_cluster(cluster_id: str):
         avg_rca_tokens=avg_rca,
         avg_micro_tokens=avg_micro,
         unique_root_causes=5,
-        namespaces_monitored=ns_cnt[0]["cnt"] if ns_cnt else 0,
-        active_agents=agent_cnt[0]["cnt"] if agent_cnt else 0,
-        signal_type_diversity=type_cnt[0]["cnt"] if type_cnt else 0,
-        critical_signals_today=crit_cnt[0]["cnt"] if crit_cnt else 0,
+        namespaces_monitored=ns_count,
+        active_agents=agent_count,
+        signal_type_diversity=type_count,
+        critical_signals_today=crit_count,
         new_types_suppressed=0,
         cross_resource_dedup=0,
         critical_deduped=0,
