@@ -573,6 +573,63 @@ class StreamingSession:
         except Exception as e:
             logger.warning("Profile update failed: %s", e)
 
+    def _feed_incident(self, task, model: str, output: str):
+        """Feed inference results to the incident manager."""
+        try:
+            from app.api.incidents import get_manager
+            mgr = get_manager()
+            ns = task.context.get("namespace") or (task.context.get("namespaces", [""])[0] if task.context.get("namespaces") else "")
+            cluster = task.context.get("cluster", "infra01")
+            if not ns:
+                return
+
+            mgr.process_signal(
+                namespace=ns, cluster_id=cluster,
+                signal_type=task.context.get("finding_type", "unknown"),
+                severity=task.context.get("severity", "medium"),
+                signal_id=str(task.task_id)[:8],
+                resource_name=task.context.get("resource_name", ""),
+            )
+
+            if task.task_type == "classify_signal" and output:
+                import json
+                try:
+                    parsed = json.loads(output.strip().strip("`").strip())
+                    if parsed.get("failure_class"):
+                        mgr.add_classification(
+                            namespace=ns, cluster_id=cluster,
+                            failure_class=parsed["failure_class"],
+                            confidence=parsed.get("confidence", 0.5),
+                            model=model,
+                        )
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+            if task.task_type == "root_cause_analysis":
+                mgr.add_inference(namespace=ns, cluster_id=cluster,
+                                  task_type="root_cause_analysis", model=model, output=output)
+
+            if task.task_type == "suggest_remediation" and output:
+                import json
+                try:
+                    parsed = json.loads(output.strip().strip("`").strip())
+                    if parsed.get("fix"):
+                        mgr.add_remediation_option(
+                            namespace=ns, cluster_id=cluster,
+                            action=parsed["fix"],
+                            command=parsed.get("command"),
+                            risk=parsed.get("risk", "medium"),
+                            source="llm",
+                        )
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+            if task.task_type == "explain_signal":
+                mgr.add_inference(namespace=ns, cluster_id=cluster,
+                                  task_type="explain_signal", model=model, output=output)
+        except Exception as e:
+            logger.debug("Incident feed error: %s", e)
+
     def _push_escalation(self, decision):
         """Log escalation for cross-product visibility. Actual push happens via Kafka/webhook."""
         pass
@@ -753,6 +810,7 @@ class StreamingSession:
                     "output": resp.output[:200] if resp.output else "",
                     "severity": task.context.get("severity", ""),
                 })
+                self._feed_incident(task, model, resp.output or "")
             else:
                 self.totals["inference_calls"] += 1
                 self.store.add_inference({
