@@ -53,21 +53,33 @@ export default function Scenarios() {
   const runScenario = async (id: string) => {
     setRunning(id);
     setExpanded(id);
+    setResults(prev => ({ ...prev, [id]: { scenario_id: id, name: id, namespace: '', status: 'running', steps: [], checks: [] } as RunResult }));
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
-      const resp = await fetch('/api/v1/scenarios/run', {
+      await fetch('/api/v1/scenarios/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: id }),
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
-      const result = await resp.json();
-      setResults(prev => ({ ...prev, [id]: result }));
+      // Poll for results
+      const pollForResult = async () => {
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          try {
+            const resp = await fetch(`/api/v1/scenarios/results/${id}`);
+            const result = await resp.json();
+            setResults(prev => ({ ...prev, [id]: result }));
+            if (result.status !== 'running') {
+              setRunning(null);
+              return;
+            }
+          } catch { /* keep polling */ }
+        }
+        setRunning(null);
+      };
+      pollForResult();
     } catch (e) {
-      setResults(prev => ({ ...prev, [id]: { scenario_id: id, name: id, namespace: '', status: 'error', steps: [], checks: [], error: String(e) } }));
+      setResults(prev => ({ ...prev, [id]: { scenario_id: id, name: id, namespace: '', status: 'error', steps: [], checks: [], error: String(e) } as RunResult }));
+      setRunning(null);
     }
-    setRunning(null);
   };
 
   const runAll = async () => {

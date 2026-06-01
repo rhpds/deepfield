@@ -1,11 +1,14 @@
-"""Scenarios API — synthetic end-to-end pipeline testing."""
+"""Scenarios API — async synthetic end-to-end pipeline testing."""
 
 import os
+import threading
+import asyncio
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1/scenarios", tags=["scenarios"])
 
-_last_results: dict = {}
+_results: dict = {}
+_running: dict = {}
 
 
 @router.get("")
@@ -23,19 +26,42 @@ async def list_scenarios():
 
 @router.post("/run")
 async def run_scenario(body: dict):
+    """Start a scenario in the background — returns immediately. Poll /results for status."""
     scenario_id = body.get("scenario_id", "")
-    from app.testing.scenario_runner import ScenarioRunner, SCENARIOS
+    from app.testing.scenario_runner import SCENARIOS
     if scenario_id not in SCENARIOS:
         return {"error": f"Unknown scenario: {scenario_id}"}
+    if scenario_id in _running and _running[scenario_id]:
+        return {"status": "already_running", "scenario_id": scenario_id}
 
-    cluster_url = os.environ.get("CLUSTER_1_API_URL", "")
-    cluster_token = os.environ.get("CLUSTER_1_TOKEN", "")
-    runner = ScenarioRunner(cluster_api_url=cluster_url, token=cluster_token)
-    result = await runner.run_scenario(scenario_id)
-    _last_results[scenario_id] = result
-    return result
+    _running[scenario_id] = True
+    _results[scenario_id] = {"scenario_id": scenario_id, "status": "running", "name": SCENARIOS[scenario_id].name}
+
+    def _run_in_thread():
+        from app.testing.scenario_runner import ScenarioRunner
+        cluster_url = os.environ.get("CLUSTER_1_API_URL", "")
+        cluster_token = os.environ.get("CLUSTER_1_TOKEN", "")
+        runner = ScenarioRunner(cluster_api_url=cluster_url, token=cluster_token)
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(runner.run_scenario(scenario_id))
+            _results[scenario_id] = result
+        except Exception as e:
+            _results[scenario_id] = {"scenario_id": scenario_id, "status": "error", "error": str(e)}
+        finally:
+            loop.close()
+            _running[scenario_id] = False
+
+    t = threading.Thread(target=_run_in_thread, daemon=True)
+    t.start()
+    return {"status": "started", "scenario_id": scenario_id}
 
 
 @router.get("/results")
 async def get_results():
-    return {"results": _last_results}
+    return {"results": _results}
+
+
+@router.get("/results/{scenario_id}")
+async def get_result(scenario_id: str):
+    return _results.get(scenario_id, {"status": "not_run"})
