@@ -169,20 +169,38 @@ export default function FleetOverview() {
     return () => { cancelled = true; clearInterval(poll); };
   }, [range.key]);
 
+  /* ----- Windowed metrics from /api/v1/metrics ----- */
+  const [windowedMetrics, setWindowedMetrics] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchMetrics() {
+      try {
+        const resp = await fetch(`/api/v1/metrics?window=${range.key}`);
+        if (!cancelled) setWindowedMetrics(await resp.json());
+      } catch { /* */ }
+    }
+    fetchMetrics();
+    const poll = setInterval(fetchMetrics, 10000);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [range.key]);
+
+  const wm = windowedMetrics as Record<string, unknown> | null;
+  const funnel = (wm?.funnel ?? {}) as Record<string, number>;
+
   /* ----- Derived values ----- */
   const m = live?.metrics;
   const clusterCount = m?.clusters_monitored ?? clusters?.length ?? 0;
-  const signalsPerSec = m?.signals_per_second ?? 0;
-  const compressionRatio = m?.compression_ratio;
-  const inFlight = m?.inference_in_flight ?? 0;
+  const signalsPerSec = (wm?.signals_per_second as number) ?? m?.signals_per_second ?? 0;
+  const compressionRatio = (wm?.compression_ratio as number) ?? m?.compression_ratio ?? 0;
+  const inFlight = (wm?.inference_in_flight as number) ?? m?.inference_in_flight ?? 0;
 
-  /* Funnel values — use cumulative totals, not window metrics */
-  const t = live?.totals;
-  const rawSignals = t?.raw_signals ?? 0;
-  const retained = Math.max(0, rawSignals - (t?.dropped ?? 0));
-  const findingsCount = t?.findings ?? 0;
-  const reasoningTasks = t?.reasoning_tasks ?? 0;
-  const inferenceCompleted = t?.inference_calls ?? 0;
+  /* Funnel values — from windowed /api/v1/metrics endpoint */
+  const rawSignals = funnel.raw ?? 0;
+  const retained = Math.max(0, funnel.retained ?? 0);
+  const findingsCount = funnel.findings ?? 0;
+  const reasoningTasks = funnel.tasks ?? 0;
+  const inferenceCompleted = funnel.inferences ?? 0;
 
   const funnelSteps = [
     { label: 'Raw', value: rawSignals, color: '#6A6E73' },
