@@ -65,9 +65,10 @@ export default function Scenarios() {
           await new Promise(r => setTimeout(r, 3000));
           try {
             const resp = await fetch(`/api/v1/scenarios/results/${id}`);
-            const result = await resp.json();
+            const raw = await resp.json();
+            const result = { ...raw, steps: raw.steps || [], checks: raw.checks || [] } as RunResult;
             setResults(prev => ({ ...prev, [id]: result }));
-            if (result.status !== 'running') {
+            if (raw.status && raw.status !== 'running') {
               setRunning(null);
               return;
             }

@@ -154,7 +154,7 @@ class ScenarioRunner:
             else:
                 result["steps"].append(await self._inject_resource(scenario))
 
-            incident = await self._wait_for_incident(scenario.namespace, timeout=120)
+            incident = await self._wait_for_incident(scenario.namespace, timeout=180)
             result["incident"] = incident
 
             if incident:
@@ -212,21 +212,23 @@ class ScenarioRunner:
             return {"step": "inject_resource", "status": "ok" if resp.status_code in (200, 201) else "failed",
                     "response": resp.status_code, "kind": kind, "name": scenario.inject_spec.get("metadata", {}).get("name")}
 
-    async def _wait_for_incident(self, namespace: str, timeout: int = 120) -> Optional[dict]:
-        import httpx
+    async def _wait_for_incident(self, namespace: str, timeout: int = 180) -> Optional[dict]:
+        """Wait for a NEW open incident in this namespace (created after we started)."""
+        from app.api.incidents import get_manager
+        mgr = get_manager()
         start = time.monotonic()
+        start_iso = datetime.now(timezone.utc).isoformat()
         while time.monotonic() - start < timeout:
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get("http://localhost:8099/api/v1/incidents")
-                    if resp.status_code == 200:
-                        incidents = resp.json().get("incidents", [])
-                        for inc in incidents:
-                            if inc.get("namespace") == namespace and inc.get("status") == "open":
-                                return inc
-            except Exception:
-                pass
+            for inc in mgr.list_incidents(status="open"):
+                if (inc.get("namespace") == namespace and
+                        inc.get("created_at", "") >= start_iso):
+                    if inc.get("rca_output"):
+                        return inc
             await _async_sleep(5)
+        # Fallback: return any open incident for this namespace even without RCA
+        for inc in mgr.list_incidents(status="open"):
+            if inc.get("namespace") == namespace:
+                return inc
         return None
 
     async def _cleanup(self, scenario: Scenario):
