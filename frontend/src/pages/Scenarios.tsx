@@ -54,10 +54,14 @@ export default function Scenarios() {
     setRunning(id);
     setExpanded(id);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
       const resp = await fetch('/api/v1/scenarios/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: id }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const result = await resp.json();
       setResults(prev => ({ ...prev, [id]: result }));
     } catch (e) {
