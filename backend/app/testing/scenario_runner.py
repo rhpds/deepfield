@@ -168,7 +168,13 @@ class ScenarioRunner:
             await self._cleanup(scenario)
             result["steps"].append({"step": "cleanup", "status": "done"})
 
-            result["status"] = "pass" if all(c.get("passed") for c in result.get("checks", [])) else "fail"
+            checks = result.get("checks", [])
+            if not checks:
+                result["status"] = "no_incident"
+            elif all(c.get("passed") for c in checks):
+                result["status"] = "pass"
+            else:
+                result["status"] = "fail"
         except Exception as e:
             result["status"] = "error"
             result["error"] = str(e)
@@ -212,7 +218,7 @@ class ScenarioRunner:
             return {"step": "inject_resource", "status": "ok" if resp.status_code in (200, 201) else "failed",
                     "response": resp.status_code, "kind": kind, "name": scenario.inject_spec.get("metadata", {}).get("name")}
 
-    async def _wait_for_incident(self, namespace: str, timeout: int = 300) -> Optional[dict]:
+    async def _wait_for_incident(self, namespace: str, timeout: int = 600) -> Optional[dict]:
         """Wait for a NEW open incident in this namespace."""
         from app.api.incidents import get_manager
         mgr = get_manager()
