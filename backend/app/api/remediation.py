@@ -60,6 +60,76 @@ async def list_commands():
     return {"allowed_commands": ALLOWED_COMMANDS}
 
 
+class ParseRequest(BaseModel):
+    command_string: str
+    namespace: str = ""
+    cluster: str = "infra01"
+
+
+@router.post("/parse")
+async def parse_command(req: ParseRequest):
+    """Parse an oc CLI string into a structured ExecuteRequest. Returns what would happen without executing."""
+    parts = req.command_string.strip().split()
+    if not parts or parts[0] != "oc":
+        return {"valid": False, "reason": "Not an oc command"}
+
+    ns = req.namespace
+    for i, p in enumerate(parts):
+        if p == "-n" and i + 1 < len(parts):
+            ns = parts[i + 1]
+
+    verb = parts[1] if len(parts) > 1 else ""
+    resource_type = parts[2] if len(parts) > 2 else ""
+    resource_name = parts[3] if len(parts) > 3 else ""
+
+    if "|" in req.command_string or ";" in req.command_string:
+        return {"valid": False, "reason": "Piped/chained commands not supported — use individual commands"}
+
+    if verb == "exec":
+        return {"valid": False, "reason": "Interactive exec not supported via API"}
+
+    if verb == "edit":
+        return {"valid": False, "reason": "Interactive edit not supported — use specific patch commands"}
+
+    cmd_map = {
+        "get": "get", "describe": "describe", "logs": "logs",
+        "delete": "delete_pod", "rollout": "rollout_restart",
+        "scale": "scale",
+    }
+    mapped = cmd_map.get(verb)
+    if not mapped:
+        return {"valid": False, "reason": f"Command '{verb}' not in allowlist: {list(ALLOWED_COMMANDS.keys())}"}
+
+    if mapped == "rollout_restart" and "restart" not in parts:
+        return {"valid": False, "reason": "Only 'rollout restart' is supported"}
+
+    is_read_only = mapped in READ_ONLY_COMMANDS
+    is_ecosystem = ns in ECOSYSTEM_NAMESPACES
+    blocked = not is_read_only and not is_ecosystem
+
+    kind = resource_type.rstrip("s").capitalize() if resource_type else "Pod"
+    if resource_type in ("deployment", "deployments", "deploy"):
+        kind = "Deployment"
+    elif resource_type in ("pod", "pods"):
+        kind = "Pod"
+    elif resource_type in ("service", "services", "svc"):
+        kind = "Service"
+
+    return {
+        "valid": True,
+        "command": mapped,
+        "description": ALLOWED_COMMANDS.get(mapped, ""),
+        "namespace": ns,
+        "cluster": req.cluster,
+        "resource_kind": kind,
+        "resource_name": resource_name.split()[0] if resource_name else "",
+        "read_only": is_read_only,
+        "ecosystem": is_ecosystem,
+        "blocked": blocked,
+        "block_reason": f"Write commands blocked outside ecosystem namespaces" if blocked else None,
+    }
+
+
 @router.post("/execute", dependencies=[Depends(require_write_access)])
 async def execute_command(req: ExecuteRequest):
     if req.command not in ALLOWED_COMMANDS:

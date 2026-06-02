@@ -67,12 +67,64 @@ function tryParseJSON(text: string): Record<string, unknown> | null {
   return null;
 }
 
+interface RemediationModal {
+  command: string;
+  namespace: string;
+  cluster: string;
+  parsed: Record<string, unknown> | null;
+  status: 'parsing' | 'ready' | 'blocked' | 'executing' | 'done' | 'error';
+  result: string | null;
+}
+
 export default function Incidents() {
   const navigate = useNavigate();
   const { range } = useTimeRange();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [modal, setModal] = useState<RemediationModal | null>(null);
+
+  async function handleExecuteClick(command: string, namespace: string, cluster: string) {
+    setModal({ command, namespace, cluster, parsed: null, status: 'parsing', result: null });
+    try {
+      const resp = await fetch('/api/v1/remediation/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command_string: command, namespace, cluster }),
+      });
+      const data = await resp.json();
+      if (!data.valid) {
+        setModal(m => m ? { ...m, status: 'blocked', parsed: data, result: data.reason } : null);
+      } else if (data.blocked) {
+        setModal(m => m ? { ...m, status: 'blocked', parsed: data, result: data.block_reason } : null);
+      } else {
+        setModal(m => m ? { ...m, status: 'ready', parsed: data } : null);
+      }
+    } catch {
+      setModal(m => m ? { ...m, status: 'error', result: 'Failed to parse command' } : null);
+    }
+  }
+
+  async function confirmExecute() {
+    if (!modal?.parsed) return;
+    const p = modal.parsed as Record<string, string>;
+    setModal(m => m ? { ...m, status: 'executing' } : null);
+    try {
+      const resp = await fetch('/api/v1/remediation/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cluster: p.cluster, namespace: p.namespace,
+          command: p.command, resource_kind: p.resource_kind,
+          resource_name: p.resource_name,
+        }),
+      });
+      const data = await resp.json();
+      setModal(m => m ? { ...m, status: 'done', result: data.output || data.error || JSON.stringify(data) } : null);
+    } catch (e) {
+      setModal(m => m ? { ...m, status: 'error', result: 'Execution failed' } : null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -258,7 +310,10 @@ export default function Incidents() {
                               </div>
                               <span className="text-[10px] text-[#6A6E73]">{rem.source}</span>
                               {canExecute && rem.command && (
-                                <button className="px-2 py-1 rounded text-xs font-bold bg-[#3E8635] text-white hover:bg-[#2d6427]">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleExecuteClick(rem.command!, inc.namespace, inc.cluster_id); }}
+                                  className="px-2 py-1 rounded text-xs font-bold bg-[#3E8635] text-white hover:bg-[#2d6427]"
+                                >
                                   Execute
                                 </button>
                               )}
@@ -309,6 +364,66 @@ export default function Incidents() {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Remediation Confirmation Modal */}
+      {modal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setModal(null)}>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-6 max-w-lg w-full mx-4 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-white">Remediation</h3>
+
+            <div>
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mb-1">Command</div>
+              <code className="text-sm text-yellow-400 font-mono bg-[#111] p-2 rounded block">{modal.command}</code>
+            </div>
+
+            {modal.parsed && (
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-[#6A6E73]">Namespace:</span> <span className="text-white">{(modal.parsed as Record<string,string>).namespace}</span></div>
+                <div><span className="text-[#6A6E73]">Command:</span> <span className="text-white">{(modal.parsed as Record<string,string>).command}</span></div>
+                <div><span className="text-[#6A6E73]">Resource:</span> <span className="text-white">{(modal.parsed as Record<string,string>).resource_kind}/{(modal.parsed as Record<string,string>).resource_name}</span></div>
+                <div>
+                  <span className="text-[#6A6E73]">Type:</span>{' '}
+                  <span className={`font-bold ${(modal.parsed as Record<string,unknown>).read_only ? 'text-[#3E8635]' : 'text-[#F0AB00]'}`}>
+                    {(modal.parsed as Record<string,unknown>).read_only ? 'Read-only' : 'Write'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {modal.status === 'blocked' && (
+              <div className="bg-[#C9190B20] border border-[#C9190B] rounded p-3 text-sm text-[#C9190B]">
+                Blocked: {modal.result}
+              </div>
+            )}
+
+            {modal.status === 'done' && (
+              <div className="bg-[#3E863520] border border-[#3E8635] rounded p-3">
+                <div className="text-xs text-[#3E8635] font-bold mb-1">Result</div>
+                <pre className="text-xs text-white font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">{modal.result}</pre>
+              </div>
+            )}
+
+            {modal.status === 'error' && (
+              <div className="bg-[#C9190B20] border border-[#C9190B] rounded p-3 text-sm text-[#C9190B]">
+                {modal.result}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button onClick={() => setModal(null)} className="px-4 py-2 rounded text-sm text-[#6A6E73] hover:text-white">
+                {modal.status === 'done' ? 'Close' : 'Cancel'}
+              </button>
+              {modal.status === 'ready' && (
+                <button onClick={confirmExecute} className="px-4 py-2 rounded text-sm font-bold bg-[#3E8635] text-white hover:bg-[#2d6427]">
+                  Confirm Execute
+                </button>
+              )}
+              {modal.status === 'executing' && (
+                <span className="px-4 py-2 text-sm text-[#F0AB00]">Executing...</span>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
