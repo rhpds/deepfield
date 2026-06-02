@@ -440,41 +440,21 @@ class StreamingSession:
                 pass
 
             _phase = "correlate"
-            # ------ Correlate (isolated) — accumulate across batches ------
-            for s in kept:
-                self._correlation_buffer.append(s)
-            # Trim buffer to last 500 signals (rolling window)
-            if len(self._correlation_buffer) > 500:
-                self._correlation_buffer = self._correlation_buffer[-500:]
+            # ------ Correlate (isolated) — only when new signals arrive ------
+            if kept:
+                for s in kept:
+                    self._correlation_buffer.append(s)
+                if len(self._correlation_buffer) > 500:
+                    self._correlation_buffer = self._correlation_buffer[-500:]
 
-            if len(self._correlation_buffer) >= 2:
-                try:
-                    findings = correlate(self._correlation_buffer)
-                except Exception as e:
-                    logger.error("correlate crashed: %s", e, exc_info=True)
-                    findings = []
+                if len(self._correlation_buffer) >= 2:
+                    try:
+                        findings = correlate(self._correlation_buffer)
+                    except Exception as e:
+                        logger.error("correlate crashed: %s", e, exc_info=True)
+                        findings = []
 
             try:
-                for f in findings:
-                    finding_dict = {
-                        "finding_type": f.finding_type, "severity": f.severity,
-                        "summary": f.summary, "namespaces": f.namespaces,
-                        "signal_count": len(f.signal_ids),
-                        "clusters": [str(c)[:8] for c in f.clusters],
-                    }
-                    self.store.add_finding(finding_dict)
-                    self._log_event("correlation", "finding", {
-                        "type": f.finding_type, "severity": f.severity,
-                        "summary": f.summary, "signals": len(f.signal_ids),
-                        "namespaces": f.namespaces[:3],
-                    })
-                    # Phase 1 Kafka dual-write: publish findings
-                    try:
-                        from app.integrations.kafka_publisher import publish_finding
-                        publish_finding(finding_dict)
-                    except Exception:
-                        pass
-
                 now_ts = time.monotonic()
                 for f in findings:
                     key = f"{f.finding_type}:{','.join(sorted(f.namespaces))}"
@@ -482,6 +462,24 @@ class StreamingSession:
                     if now_ts - last_seen >= self._finding_cooldown_secs:
                         new_findings.append(f)
                         self._finding_cooldown[key] = now_ts
+
+                        finding_dict = {
+                            "finding_type": f.finding_type, "severity": f.severity,
+                            "summary": f.summary, "namespaces": f.namespaces,
+                            "signal_count": len(f.signal_ids),
+                            "clusters": [str(c)[:8] for c in f.clusters],
+                        }
+                        self.store.add_finding(finding_dict)
+                        self._log_event("correlation", "finding", {
+                            "type": f.finding_type, "severity": f.severity,
+                            "summary": f.summary, "signals": len(f.signal_ids),
+                            "namespaces": f.namespaces[:3],
+                        })
+                        try:
+                            from app.integrations.kafka_publisher import publish_finding
+                            publish_finding(finding_dict)
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.error("finding bookkeeping crashed: %s", e, exc_info=True)
 
@@ -498,11 +496,11 @@ class StreamingSession:
                 self._window_signals += len(buffer)
                 self._window_tasks += len(tasks)
                 self._window_dropped += total_dropped
-                self._window_findings += len(findings)
+                self._window_findings += len(new_findings)
 
                 self.totals["raw_signals"] += len(buffer)
                 self.totals["reasoning_tasks"] += len(tasks)
-                self.totals["findings"] += len(findings)
+                self.totals["findings"] += len(new_findings)
                 self.totals["dropped"] += total_dropped
 
                 # Compute raw window metrics

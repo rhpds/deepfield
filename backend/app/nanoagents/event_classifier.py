@@ -17,7 +17,7 @@ EVENT_RULES = {
     "event_crashloopbackoff": ("pod_crashloop", "escalate", "high"),
     "event_failed": ("pod_pending", "keep", "medium"),
     "event_failedcreate": ("pod_pending", "keep", "medium"),
-    "event_failedscheduling": ("failed_scheduling", "escalate", "medium"),
+    "event_failedscheduling": ("failed_scheduling", "keep", "medium"),
     "event_imagepullbackoff": ("pod_imagepullbackoff", "escalate", "high"),
     "event_errimagepull": ("pod_imagepullbackoff", "escalate", "high"),
     "event_unhealthy": ("route_unhealthy", "escalate", "high"),
