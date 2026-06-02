@@ -108,6 +108,22 @@ class TestAdaptiveSuppressor:
         assert len(transients) == 1
 
 
+class TestStateEviction:
+    def test_state_eviction_at_50k_entries(self):
+        import time
+        now = time.time()
+        for i in range(50100):
+            key = f"cluster:ns:Pod:pod-{i}:pod_crashloop"
+            dedupe._state[key] = now - 7200  # 2 hours old — stale
+        dedupe._state["cluster:ns:Pod:fresh-pod:pod_crashloop"] = now  # fresh
+
+        sig = _make_signal("pod_pending", resource_name="trigger-eviction")
+        dedupe.filter([sig])
+
+        assert len(dedupe._state) < 50100
+        assert "cluster:ns:Pod:fresh-pod:pod_crashloop" in dedupe._state
+
+
 class TestPipelineWithProfile:
     def test_pipeline_accepts_profile(self):
         from app.nanoagents.pipeline import run_pipeline
