@@ -76,6 +76,8 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
             "total_tokens_in": row["total_tokens_in"] or 0,
             "total_tokens_out": row["total_tokens_out"] or 0,
         }
+    if not models and store:
+        models = store.get_model_summary()
 
     sig_count = await db.query(
         f"SELECT COUNT(*) as cnt FROM signals WHERE created_at >= NOW() - INTERVAL '{interval}'"
@@ -141,12 +143,13 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
     raw_total = funnel.get("raw", 0)
 
     # Use actual uptime when in-memory data covers less than the requested window
+    # but clamp minimum to 60s to avoid SPS spike right after restart
     import time
     actual_seconds = window_seconds
     if session and hasattr(session, '_window_start') and session._window_start > 0:
         uptime = time.monotonic() - session._window_start
         if uptime < window_seconds:
-            actual_seconds = max(uptime, 10)
+            actual_seconds = max(uptime, 60)
 
     windowed_sps = round(raw_total / max(actual_seconds, 1), 1) if raw_total > 0 else live_metrics.get("signals_per_second", 0)
     tasks_total = funnel.get("tasks", 0)
