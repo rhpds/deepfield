@@ -53,7 +53,7 @@ class ClusterStats:
 
 
 class SignalStore:
-    def __init__(self, max_signals=200, max_decisions=200, max_findings=100, max_inferences=100):
+    def __init__(self, max_signals=10000, max_decisions=5000, max_findings=1000, max_inferences=500):
         self.recent_signals: deque = deque(maxlen=max_signals)
         self.recent_decisions: deque = deque(maxlen=max_decisions)
         self.recent_findings: deque = deque(maxlen=max_findings)

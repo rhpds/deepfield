@@ -42,21 +42,35 @@ SCENARIOS: Dict[str, Scenario] = {
         id="pod_crashloop",
         name="Pod Crashloop",
         namespace="deepfield-e2e",
-        inject_type="pod",
+        inject_type="multi_pod",
         inject_spec={
-            "apiVersion": "v1", "kind": "Pod",
-            "metadata": {"name": "chaos-crashloop", "namespace": "deepfield-e2e",
-                         "labels": {"app": "deepfield-chaos-test"}},
-            "spec": {"containers": [{"name": "crash", "image": "busybox",
-                                     "command": ["sh", "-c", "echo 'starting app...' && sleep 2 && echo 'FATAL: out of memory' >&2 && kill -9 $$"],
-                                     "resources": {"limits": {"memory": "16Mi"}}}],
-                     "restartPolicy": "Always"},
+            "pods": [
+                {"apiVersion": "v1", "kind": "Pod",
+                 "metadata": {"name": "chaos-crash-1", "namespace": "deepfield-e2e", "labels": {"app": "deepfield-chaos-test"}},
+                 "spec": {"containers": [{"name": "crash", "image": "busybox",
+                          "command": ["sh", "-c", "echo 'app starting...' && sleep 1 && kill -9 $$"]}],
+                          "restartPolicy": "Always"}},
+                {"apiVersion": "v1", "kind": "Pod",
+                 "metadata": {"name": "chaos-crash-2", "namespace": "deepfield-e2e", "labels": {"app": "deepfield-chaos-test"}},
+                 "spec": {"containers": [{"name": "crash", "image": "busybox",
+                          "command": ["sh", "-c", "echo 'worker starting...' && sleep 1 && kill -11 $$"]}],
+                          "restartPolicy": "Always"}},
+                {"apiVersion": "v1", "kind": "Pod",
+                 "metadata": {"name": "chaos-crash-3", "namespace": "deepfield-e2e", "labels": {"app": "deepfield-chaos-test"}},
+                 "spec": {"containers": [{"name": "crash", "image": "busybox",
+                          "command": ["sh", "-c", "echo 'sidecar starting...' && sleep 1 && exit 137"]}],
+                          "restartPolicy": "Always"}},
+            ],
         },
         expected_classification="pods_crashlooping",
         expected_severity="high",
         execute_remediation=True,
-        cleanup_resources=[{"kind": "Pod", "name": "chaos-crashloop", "namespace": "deepfield-e2e"}],
-        description="Creates a pod that simulates OOM crashloop (runs briefly, killed by SIGKILL, restarts). Validates crashloop detection → classification → RCA → remediation.",
+        cleanup_resources=[
+            {"kind": "Pod", "name": "chaos-crash-1", "namespace": "deepfield-e2e"},
+            {"kind": "Pod", "name": "chaos-crash-2", "namespace": "deepfield-e2e"},
+            {"kind": "Pod", "name": "chaos-crash-3", "namespace": "deepfield-e2e"},
+        ],
+        description="Creates 3 crashing pods in deepfield-e2e namespace. Multiple failures trigger correlation → RCA → incident with remediation.",
     ),
     "config_error": Scenario(
         id="config_error",
@@ -154,7 +168,9 @@ class ScenarioRunner:
             await self._resolve_existing_incidents(scenario.namespace)
             result["steps"].append({"step": "clear_existing", "status": "done"})
 
-            if scenario.inject_type == "synthetic_multi":
+            if scenario.inject_type == "multi_pod":
+                result["steps"].append(await self._inject_multi_pods(scenario))
+            elif scenario.inject_type == "synthetic_multi":
                 result["steps"].append(await self._inject_multi_signals(scenario))
             elif scenario.inject_type == "synthetic_signal":
                 result["steps"].append(await self._inject_signal(scenario))
@@ -189,6 +205,29 @@ class ScenarioRunner:
 
         result["completed_at"] = datetime.now(timezone.utc).isoformat()
         return result
+
+    async def _inject_multi_pods(self, scenario: Scenario) -> dict:
+        """Inject multiple pods to generate enough signals for correlation."""
+        if not self.api or not self.token:
+            return {"step": "inject_multi_pods", "status": "skipped", "reason": "no cluster API"}
+        import httpx
+        pods = scenario.inject_spec.get("pods", [])
+        created = 0
+        for pod_spec in pods:
+            ns = pod_spec.get("metadata", {}).get("namespace", scenario.namespace)
+            self.validate_namespace(ns)
+            try:
+                async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+                    resp = await client.post(
+                        f"{self.api}/api/v1/namespaces/{ns}/pods",
+                        json=pod_spec,
+                        headers={"Authorization": f"Bearer {self.token}"})
+                    if resp.status_code in (200, 201):
+                        created += 1
+            except Exception:
+                pass
+        return {"step": "inject_multi_pods", "status": "ok" if created > 0 else "failed",
+                "created": created, "total": len(pods)}
 
     async def _resolve_existing_incidents(self, namespace: str):
         """Resolve any open incidents for this namespace so the scenario gets a fresh one."""
