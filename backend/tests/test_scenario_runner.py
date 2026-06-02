@@ -2,7 +2,7 @@
 
 import pytest
 
-ECOSYSTEM = {"deepfield", "stargate", "partner-ai-launchpad", "platform-dashboard", "intel-rh-demo"}
+ECOSYSTEM = {"deepfield", "stargate", "partner-ai-launchpad", "platform-dashboard", "intel-rh-demo", "deepfield-e2e"}
 
 
 class TestScenarioDefinitions:

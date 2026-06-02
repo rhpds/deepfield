@@ -19,7 +19,7 @@ logger = logging.getLogger("deepfield.scenarios")
 
 ECOSYSTEM_NAMESPACES = frozenset({
     "deepfield", "stargate", "partner-ai-launchpad",
-    "platform-dashboard", "intel-rh-demo",
+    "platform-dashboard", "intel-rh-demo", "deepfield-e2e",
 })
 
 
@@ -41,11 +41,11 @@ SCENARIOS: Dict[str, Scenario] = {
     "pod_crashloop": Scenario(
         id="pod_crashloop",
         name="Pod Crashloop",
-        namespace="deepfield",
+        namespace="deepfield-e2e",
         inject_type="pod",
         inject_spec={
             "apiVersion": "v1", "kind": "Pod",
-            "metadata": {"name": "chaos-crashloop", "namespace": "deepfield",
+            "metadata": {"name": "chaos-crashloop", "namespace": "deepfield-e2e",
                          "labels": {"app": "deepfield-chaos-test"}},
             "spec": {"containers": [{"name": "crash", "image": "busybox",
                                      "command": ["sh", "-c", "echo 'starting app...' && sleep 2 && echo 'FATAL: out of memory' >&2 && kill -9 $$"],
@@ -55,7 +55,7 @@ SCENARIOS: Dict[str, Scenario] = {
         expected_classification="pods_crashlooping",
         expected_severity="high",
         execute_remediation=True,
-        cleanup_resources=[{"kind": "Pod", "name": "chaos-crashloop", "namespace": "deepfield"}],
+        cleanup_resources=[{"kind": "Pod", "name": "chaos-crashloop", "namespace": "deepfield-e2e"}],
         description="Creates a pod that simulates OOM crashloop (runs briefly, killed by SIGKILL, restarts). Validates crashloop detection → classification → RCA → remediation.",
     ),
     "config_error": Scenario(
@@ -65,7 +65,7 @@ SCENARIOS: Dict[str, Scenario] = {
         inject_type="pod",
         inject_spec={
             "apiVersion": "v1", "kind": "Pod",
-            "metadata": {"name": "chaos-configerr", "namespace": "platform-dashboard",
+            "metadata": {"name": "chaos-configerr", "namespace": "deepfield-e2e",
                          "labels": {"app": "deepfield-chaos-test"}},
             "spec": {"containers": [{"name": "configerr", "image": "busybox",
                                      "command": ["sh", "-c", "echo $MISSING_VAR && exit 1"],
@@ -76,7 +76,7 @@ SCENARIOS: Dict[str, Scenario] = {
         expected_classification="invalid_configuration",
         expected_severity="high",
         execute_remediation=True,
-        cleanup_resources=[{"kind": "Pod", "name": "chaos-configerr", "namespace": "platform-dashboard"}],
+        cleanup_resources=[{"kind": "Pod", "name": "chaos-configerr", "namespace": "deepfield-e2e"}],
         description="Creates a pod with missing ConfigMap reference. Validates config error detection and classification.",
     ),
     "image_pull": Scenario(
@@ -86,7 +86,7 @@ SCENARIOS: Dict[str, Scenario] = {
         inject_type="pod",
         inject_spec={
             "apiVersion": "v1", "kind": "Pod",
-            "metadata": {"name": "chaos-imagepull", "namespace": "intel-rh-demo",
+            "metadata": {"name": "chaos-imagepull", "namespace": "deepfield-e2e",
                          "labels": {"app": "deepfield-chaos-test"}},
             "spec": {"containers": [{"name": "badimage", "image": "nonexistent-registry.example.com/fake-image:v999"}],
                      "restartPolicy": "Never"},
@@ -94,23 +94,23 @@ SCENARIOS: Dict[str, Scenario] = {
         expected_classification="image_pull_backoff",
         expected_severity="high",
         execute_remediation=True,
-        cleanup_resources=[{"kind": "Pod", "name": "chaos-imagepull", "namespace": "intel-rh-demo"}],
+        cleanup_resources=[{"kind": "Pod", "name": "chaos-imagepull", "namespace": "deepfield-e2e"}],
         description="Creates a pod with nonexistent image. Validates image pull error detection.",
     ),
     "synthetic_oom": Scenario(
         id="synthetic_oom",
         name="Synthetic OOM (Signal Only)",
-        namespace="deepfield",
+        namespace="deepfield-e2e",
         inject_type="synthetic_multi",
         inject_spec={
             "signals": [
-                {"signal_type": "pod_crashloop", "namespace": "deepfield", "resource_kind": "Pod",
+                {"signal_type": "pod_crashloop", "namespace": "deepfield-e2e", "resource_kind": "Pod",
                  "resource_name": "synthetic-oom-pod-1", "severity": "critical",
                  "raw_payload": {"reason": "OOMKilled", "exitCode": 137}},
-                {"signal_type": "pod_crashloop", "namespace": "deepfield", "resource_kind": "Pod",
+                {"signal_type": "pod_crashloop", "namespace": "deepfield-e2e", "resource_kind": "Pod",
                  "resource_name": "synthetic-oom-pod-2", "severity": "critical",
                  "raw_payload": {"reason": "OOMKilled", "exitCode": 137}},
-                {"signal_type": "event_backoff", "namespace": "deepfield", "resource_kind": "Pod",
+                {"signal_type": "event_backoff", "namespace": "deepfield-e2e", "resource_kind": "Pod",
                  "resource_name": "synthetic-oom-pod-1", "severity": "high",
                  "raw_payload": {"reason": "BackOff", "message": "Back-off restarting failed container"}},
             ],
