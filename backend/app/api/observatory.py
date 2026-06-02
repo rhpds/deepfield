@@ -38,32 +38,35 @@ async def get_agents(window: Optional[str] = Query(None)):
             f"WHERE created_at >= NOW() - INTERVAL '{interval}' "
             f"GROUP BY filter_name, outcome ORDER BY filter_name"
         )
-        outcome_map = {"escalate": "escalated", "suppress": "suppressed", "dedupe": "deduped",
-                       "keep": "kept", "drop": "dropped", "enrich": "enriched"}
         agents: dict = {}
-        for r in rows:
-            name = r["filter_name"]
-            if name not in agents:
-                agents[name] = {"total_evaluated": 0, "escalated": 0, "kept": 0, "dropped": 0, "suppressed": 0, "deduped": 0, "enriched": 0}
-            agents[name]["total_evaluated"] += r["cnt"]
-            mapped = outcome_map.get(r["outcome"], r["outcome"])
-            if mapped in agents[name]:
-                agents[name][mapped] += r["cnt"]
+        if rows:
+            outcome_map = {"escalate": "escalated", "suppress": "suppressed", "dedupe": "deduped",
+                           "keep": "kept", "drop": "dropped", "enrich": "enriched"}
+            for r in rows:
+                name = r["filter_name"]
+                if name not in agents:
+                    agents[name] = {"total_evaluated": 0, "escalated": 0, "kept": 0, "dropped": 0, "suppressed": 0, "deduped": 0, "enriched": 0}
+                agents[name]["total_evaluated"] += r["cnt"]
+                mapped = outcome_map.get(r["outcome"], r["outcome"])
+                if mapped in agents[name]:
+                    agents[name][mapped] += r["cnt"]
 
-        # Add agents that exist in pipeline but have no DB decisions
+        # Fall back to in-memory stats when DB has no data for this window
+        store = _get_store()
+        if not rows and store:
+            return {"agents": store.get_agent_summary()}
+
         ALL_AGENTS = [
+            "DedupeAgent", "TransientSuppressorAgent",
             "FailureClassifierAgent", "EventClassifierAgent", "PodHealthAgent",
             "RouteHealthAgent", "PVCHealthAgent", "NodePressureAgent",
             "NamespaceQuotaAgent", "KServeEndpointAgent", "KafkaLagAgent",
             "LaunchpadSessionAgent", "StarGateEvaluationAgent",
-            "TransientSuppressorAgent", "DedupeAgent",
         ]
         for agent_name in ALL_AGENTS:
             if agent_name not in agents:
                 agents[agent_name] = {"total_evaluated": 0, "escalated": 0, "kept": 0, "dropped": 0, "suppressed": 0, "deduped": 0, "enriched": 0}
 
-        # Estimate kept count from in-memory ratio (keep decisions not persisted to DB)
-        store = _get_store()
         if store and store.agent_stats:
             for name, db_stats in agents.items():
                 mem = store.agent_stats.get(name)
