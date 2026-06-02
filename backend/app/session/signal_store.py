@@ -66,42 +66,46 @@ class SignalStore:
 
     def _load_historical_stats(self):
         """Seed agent stats from DB on startup so dashboard isn't empty after restart."""
-        import os
-        import logging
-        logger = logging.getLogger(__name__)
+        import os, logging, threading
+        _logger = logging.getLogger(__name__)
         db_url = os.getenv("DATABASE_URL", "")
         if not db_url:
             return
-        try:
-            import asyncio
-            import asyncpg
+        results = []
 
-            async def _load():
-                conn = await asyncpg.connect(db_url)
-                try:
-                    rows = await conn.fetch("""
-                        SELECT DISTINCT ON (agent_name) agent_name, total_evaluated, escalated, kept, dropped, suppressed, deduped
-                        FROM agent_stats_snapshots ORDER BY agent_name, captured_at DESC
-                    """)
-                    for r in rows:
-                        self.agent_stats[r["agent_name"]] = AgentStats(
-                            total_evaluated=r["total_evaluated"] or 0,
-                            escalated=r["escalated"] or 0,
-                            kept=r["kept"] or 0,
-                            dropped=r["dropped"] or 0,
-                            suppressed=r["suppressed"] or 0,
-                            deduped=r["deduped"] or 0,
-                        )
-                    if rows:
-                        logger.info("Loaded historical agent stats for %d agents from DB", len(rows))
-                finally:
-                    await conn.close()
+        def _sync_load():
+            try:
+                import asyncio, asyncpg
+                async def _do():
+                    conn = await asyncpg.connect(db_url)
+                    try:
+                        return await conn.fetch("""
+                            SELECT DISTINCT ON (agent_name) agent_name, total_evaluated, escalated, kept, dropped, suppressed, deduped
+                            FROM agent_stats_snapshots ORDER BY agent_name, captured_at DESC
+                        """)
+                    finally:
+                        await conn.close()
+                loop = asyncio.new_event_loop()
+                results.extend(loop.run_until_complete(_do()) or [])
+                loop.close()
+            except Exception as e:
+                _logger.debug("No historical stats to load: %s", e)
 
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(_load())
-            loop.close()
-        except Exception as e:
-            logger.debug("No historical stats to load: %s", e)
+        t = threading.Thread(target=_sync_load)
+        t.start()
+        t.join(timeout=10)
+
+        for r in results:
+            self.agent_stats[r["agent_name"]] = AgentStats(
+                total_evaluated=r["total_evaluated"] or 0,
+                escalated=r["escalated"] or 0,
+                kept=r["kept"] or 0,
+                dropped=r["dropped"] or 0,
+                suppressed=r["suppressed"] or 0,
+                deduped=r["deduped"] or 0,
+            )
+        if results:
+            _logger.info("Loaded historical agent stats for %d agents from DB", len(results))
 
     def add_signal(self, signal_dict: dict):
         """Store an actionable signal (already filtered to medium+)."""

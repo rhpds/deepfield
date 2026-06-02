@@ -139,33 +139,38 @@ def get_profile(cluster_id: str) -> ClusterProfile:
 
 def load_profiles_from_db():
     """Load persisted profiles on startup."""
-    import asyncio
-    import os
+    import os, threading
     db_url = os.getenv("DATABASE_URL", "")
     if not db_url:
         return
-    try:
-        import asyncpg
+    results = []
 
-        async def _load():
-            conn = await asyncpg.connect(db_url)
-            try:
-                rows = await conn.fetch("SELECT cluster_id, profile_data FROM cluster_profiles")
-                for r in rows:
-                    try:
-                        _profiles[r["cluster_id"]] = ClusterProfile.from_json(r["profile_data"])
-                        logger.info("Loaded profile for cluster %s (confidence=%.2f)",
-                                    r["cluster_id"], _profiles[r["cluster_id"]].confidence)
-                    except Exception as e:
-                        logger.warning("Failed to load profile for %s: %s", r["cluster_id"], e)
-            finally:
-                await conn.close()
+    def _sync_load():
+        try:
+            import asyncio, asyncpg
+            async def _do():
+                conn = await asyncpg.connect(db_url)
+                try:
+                    return await conn.fetch("SELECT cluster_id, profile_data FROM cluster_profiles")
+                finally:
+                    await conn.close()
+            loop = asyncio.new_event_loop()
+            results.extend(loop.run_until_complete(_do()) or [])
+            loop.close()
+        except Exception as e:
+            logger.debug("No profiles to load: %s", e)
 
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(_load())
-        loop.close()
-    except Exception as e:
-        logger.debug("No profiles to load: %s", e)
+    t = threading.Thread(target=_sync_load)
+    t.start()
+    t.join(timeout=10)
+
+    for r in results:
+        try:
+            _profiles[r["cluster_id"]] = ClusterProfile.from_json(r["profile_data"])
+            logger.info("Loaded profile for cluster %s (confidence=%.2f)",
+                        r["cluster_id"], _profiles[r["cluster_id"]].confidence)
+        except Exception as e:
+            logger.warning("Failed to load profile for %s: %s", r["cluster_id"], e)
 
 
 def persist_profile(profile: ClusterProfile):
