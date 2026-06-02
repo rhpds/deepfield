@@ -178,7 +178,7 @@ class StreamingSession:
     @staticmethod
     def _load_totals_from_db() -> dict:
         """Seed cumulative totals from DB so dashboard isn't empty after restart."""
-        defaults = {"raw_signals": 0, "reasoning_tasks": 0, "inference_calls": 0, "findings": 0, "dropped": 0}
+        defaults = {"raw_signals": 0, "reasoning_tasks": 0, "inference_calls": 0, "findings": 0, "dropped": 0, "retained": 0}
         try:
             import os, asyncio, asyncpg
             db_url = os.getenv("DATABASE_URL", "")
@@ -537,12 +537,13 @@ class StreamingSession:
                 self.totals["reasoning_tasks"] += len(tasks)
                 self.totals["findings"] += len(new_findings)
                 self.totals["dropped"] += total_dropped
+                self.totals["retained"] = self.totals.get("retained", 0) + len(kept)
 
                 # Compute raw window metrics
                 elapsed = max(0.1, time.monotonic() - self._window_start)
                 self.metrics["raw_signals"] = self._window_signals
                 self.metrics["dropped"] = self._window_dropped
-                self.metrics["retained"] = max(0, self._window_signals - self._window_dropped)
+                self.metrics["retained"] = len(kept)
                 self.metrics["findings"] = self._window_findings
 
                 raw_sps = self._window_signals / elapsed

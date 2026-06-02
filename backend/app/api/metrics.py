@@ -106,11 +106,9 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
     # Fall back to in-memory when DB has no data for this window
     if raw == 0 and session and hasattr(session, 'totals'):
         t = session.totals
-        raw_total = t.get("raw_signals", 0)
-        retained = max(0, raw_total - t.get("dropped", 0))
         funnel = {
-            "raw": raw_total,
-            "retained": retained,
+            "raw": t.get("raw_signals", 0),
+            "retained": t.get("retained", 0),
             "findings": t.get("findings", 0),
             "tasks": t.get("reasoning_tasks", 0),
             "inferences": t.get("inference_calls", 0),
@@ -122,16 +120,22 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
         f"SELECT * FROM signals WHERE created_at >= NOW() - INTERVAL '{interval}' "
         f"ORDER BY created_at DESC LIMIT 20"
     )
+    if not recent_signals and store:
+        recent_signals = store.get_recent_signals(20)
 
     recent_decisions = await db.query(
         f"SELECT * FROM decisions WHERE created_at >= NOW() - INTERVAL '{interval}' "
         f"ORDER BY created_at DESC LIMIT 30"
     )
+    if not recent_decisions and store:
+        recent_decisions = store.get_recent_decisions(30)
 
     recent_inferences = await db.query(
         f"SELECT * FROM inferences WHERE created_at >= NOW() - INTERVAL '{interval}' "
         f"ORDER BY created_at DESC LIMIT 20"
     )
+    if not recent_inferences and store:
+        recent_inferences = store.get_recent_inferences(20)
 
     return {
         "window": window,
