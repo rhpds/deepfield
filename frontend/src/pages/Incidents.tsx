@@ -155,16 +155,18 @@ export default function Incidents() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         {[
-          { label: 'Total Incidents', value: incidents.length },
-          { label: 'Open (High/Crit)', value: openCount, color: openCount > 0 ? '#EE0000' : '#3E8635' },
-          { label: 'With RCA', value: withRCA },
-          { label: 'With Remediation', value: withRemediation },
+          { label: 'Total', value: incidents.length },
+          { label: 'Open', value: incidents.filter(i => i.status === 'open').length, color: '#EE0000' },
+          { label: 'High/Critical', value: openCount, color: openCount > 0 ? '#C9190B' : '#3E8635' },
+          { label: 'With RCA', value: withRCA, color: withRCA > 0 ? '#3E8635' : '#6A6E73' },
+          { label: 'With Remediation', value: withRemediation, color: withRemediation > 0 ? '#3E8635' : '#6A6E73' },
+          { label: 'Namespaces', value: new Set(incidents.map(i => i.namespace)).size },
         ].map(({ label, value, color }) => (
-          <div key={label} className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4">
+          <div key={label} className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-3 text-center">
             <div className="text-2xl font-bold tabular-nums" style={{ color: color || '#fff', fontFamily: 'Red Hat Display' }}>{value}</div>
-            <div className="text-xs text-[#6A6E73] uppercase tracking-wider mt-1">{label}</div>
+            <div className="text-[10px] text-[#6A6E73] uppercase tracking-wider mt-1">{label}</div>
           </div>
         ))}
       </div>
@@ -188,7 +190,7 @@ export default function Incidents() {
               <div key={inc.id} className="border rounded-xl overflow-hidden"
                 style={{ borderColor: isExpanded ? sevColor : '#333', borderLeftWidth: '4px', borderLeftColor: sevColor }}>
 
-                {/* Header — always visible */}
+                {/* Header — always visible, rich preview */}
                 <div className="p-5 cursor-pointer hover:bg-[#1a1a1a] transition-colors"
                   onClick={() => setExpanded(isExpanded ? null : inc.id)}>
                   <div className="flex items-center justify-between mb-2">
@@ -200,23 +202,40 @@ export default function Incidents() {
                         onClick={(e) => { e.stopPropagation(); navigate(`/cluster/${inc.cluster_id}`); }}>
                         {inc.namespace}
                       </span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-[#212121] text-[#0071C5]">{inc.cluster_id}</span>
                       {inc.failure_class && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-[#212121] text-[#F0AB00]">{inc.failure_class}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-[#F0AB00]/20 text-[#F0AB00]">{inc.failure_class}</span>
                       )}
-                      <span className="text-xs text-[#6A6E73]">{inc.signal_count} signals</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-[#6A6E73]">{relativeTime(inc.last_seen)}</span>
-                      <span className="text-[#6A6E73]">{isExpanded ? '▼' : '▶'}</span>
+                    <div className="flex items-center gap-3 text-xs text-[#6A6E73]">
+                      <span>{inc.signal_count} signals</span>
+                      <span>{inc.remediation_options.length} fixes</span>
+                      <span>{inc.evidence.inferences.length} analyses</span>
+                      <span>{relativeTime(inc.last_seen)}</span>
+                      <span>{isExpanded ? '▼' : '▶'}</span>
                     </div>
                   </div>
 
-                  {/* Quick summary */}
+                  {/* Root cause summary — always visible */}
                   {rca?.root_cause ? (
-                    <p className="text-sm text-[#e0e0e0] line-clamp-2">{String(rca.root_cause)}</p>
+                    <p className="text-sm text-[#e0e0e0] mb-2">{String(rca.root_cause)}</p>
+                  ) : inc.evidence.inferences.length > 0 ? (
+                    <p className="text-sm text-[#a0a0a0] mb-2">{(() => {
+                      const parsed = tryParseJSON(inc.evidence.inferences[0].output_summary);
+                      return String(parsed?.root_cause || parsed?.explanation || inc.evidence.inferences[0].output_summary || '').slice(0, 200);
+                    })()}</p>
                   ) : null}
-                  {!rca && inc.evidence.inferences.length > 0 && (
-                    <p className="text-sm text-[#a0a0a0] line-clamp-1">{inc.evidence.inferences[0].output_summary}</p>
+
+                  {/* Signal type pills — collapsed preview */}
+                  {inc.evidence.signals.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {[...new Set(inc.evidence.signals.map(s => s.type))].slice(0, 5).map(t => (
+                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-[#212121] text-[#6A6E73]">{t.replace(/_/g, ' ')}</span>
+                      ))}
+                      {inc.evidence.signals.length > 5 && (
+                        <span className="text-[10px] text-[#6A6E73]">+{inc.evidence.signals.length - 5} more</span>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -224,21 +243,37 @@ export default function Incidents() {
                 {isExpanded && (
                   <div className="border-t border-[#333] p-5 space-y-5 bg-[#0f0f0f]">
 
-                    {/* Evidence Chain */}
+                    {/* Incident Timeline */}
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div className="bg-[#1a1a1a] rounded p-2">
+                        <span className="text-[#6A6E73] uppercase">First Seen</span>
+                        <div className="text-white mt-0.5">{inc.first_seen ? new Date(inc.first_seen).toLocaleString() : '—'}</div>
+                      </div>
+                      <div className="bg-[#1a1a1a] rounded p-2">
+                        <span className="text-[#6A6E73] uppercase">Last Seen</span>
+                        <div className="text-white mt-0.5">{inc.last_seen ? new Date(inc.last_seen).toLocaleString() : '—'}</div>
+                      </div>
+                      <div className="bg-[#1a1a1a] rounded p-2">
+                        <span className="text-[#6A6E73] uppercase">Status</span>
+                        <div className="mt-0.5 font-bold" style={{ color: inc.status === 'open' ? '#EE0000' : '#3E8635' }}>{inc.status.toUpperCase()}</div>
+                      </div>
+                    </div>
+
+                    {/* Evidence Chain — all signals */}
                     <div>
-                      <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">Evidence Chain</div>
-                      <div className="space-y-2">
-                        {inc.evidence.signals.slice(-5).map((sig, i) => (
+                      <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+                        Evidence Chain ({inc.evidence.signals.length} signals)
+                      </div>
+                      <div className="space-y-1 max-h-64 overflow-y-auto">
+                        {inc.evidence.signals.map((sig, i) => (
                           <div key={i} className="flex items-center gap-3 text-xs bg-[#1a1a1a] rounded px-3 py-2">
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEV_COLORS[sig.severity] || '#6A6E73' }} />
-                            <span className="text-white font-medium">{sig.type}</span>
-                            <span className="text-[#6A6E73]">{sig.resource}</span>
-                            <span className="text-[#6A6E73] ml-auto">{sig.ts ? relativeTime(sig.ts) : ''}</span>
+                            <span className="text-[#6A6E73] font-mono w-4 shrink-0">{i + 1}</span>
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: SEV_COLORS[sig.severity] || '#6A6E73' }} />
+                            <span className="text-white font-medium">{sig.type.replace(/_/g, ' ')}</span>
+                            <span className="text-[#6A6E73] truncate">{sig.resource}</span>
+                            <span className="text-[#6A6E73] ml-auto shrink-0">{sig.ts ? relativeTime(sig.ts) : ''}</span>
                           </div>
                         ))}
-                        {inc.evidence.signals.length > 5 && (
-                          <div className="text-xs text-[#6A6E73] pl-3">+ {inc.evidence.signals.length - 5} more signals</div>
-                        )}
                       </div>
                     </div>
 
