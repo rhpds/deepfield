@@ -47,6 +47,9 @@ class InferenceWorker(KafkaWorker):
             max_tokens = prompt_config.get("max_tokens", 800)
 
             resp = self._client.infer(model=model, prompt=task.prompt, max_tokens=max_tokens)
+            import re as _re
+            if resp.output:
+                resp.output = _re.sub(r'<think>.*?</think>', '', resp.output, flags=_re.DOTALL).strip()
             tier = "micro" if "cpu" in model or "granite" in model else "macro"
 
             inference_dict = {

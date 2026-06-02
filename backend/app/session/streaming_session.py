@@ -926,6 +926,9 @@ class StreamingSession:
         prompt_config = load_prompt(prompt_name)
         max_tokens = prompt_config.get("max_tokens", 800)
         resp = self.client.infer(model=model, prompt=task.prompt, max_tokens=max_tokens)
+        import re as _re
+        if resp.output:
+            resp.output = _re.sub(r'<think>.*?</think>', '', resp.output, flags=_re.DOTALL).strip()
         tier = "micro" if "cpu" in model or "granite" in model or "phi3" in model or "qwen25" in model else "macro"
         with self._lock:
             self.metrics["inference_in_flight"] = max(0, self.metrics["inference_in_flight"] - 1)
