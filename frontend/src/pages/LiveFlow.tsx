@@ -86,7 +86,7 @@ export default function LiveFlow() {
 
   const stageValues = [
     m.raw_signals ?? 0,
-    (m.raw_signals ?? 0) - (m.dropped ?? 0),
+    m.retained ?? Math.max(0, (m.raw_signals ?? 0) - (m.dropped ?? 0)),
     m.findings ?? 0,
     m.reasoning_tasks ?? 0,
     m.inference_completed ?? 0,
