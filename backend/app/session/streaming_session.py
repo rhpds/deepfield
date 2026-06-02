@@ -661,7 +661,7 @@ class StreamingSession:
             if not ns:
                 return
 
-            if task.task_type == "root_cause_analysis":
+            if task.task_type in ("root_cause_analysis", "cross_cluster_correlation"):
                 all_signals = task.context.get("signals", [])
                 signal_count = task.context.get("signal_count", len(all_signals))
 

@@ -19,6 +19,73 @@ class IncidentManager:
     def __init__(self):
         self._incidents: Dict[str, dict] = {}
         self._index: Dict[str, str] = {}
+        self._load_from_db()
+
+    def _load_from_db(self):
+        import os, asyncio, json as _json
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            return
+        try:
+            import asyncpg
+
+            async def _load():
+                conn = await asyncpg.connect(db_url)
+                try:
+                    rows = await conn.fetch(
+                        "SELECT * FROM incidents WHERE status = 'open' ORDER BY last_seen DESC LIMIT 100"
+                    )
+                    for r in rows:
+                        inc = {
+                            "id": r["id"], "cluster_id": r["cluster_id"],
+                            "namespace": r["namespace"], "failure_class": r["failure_class"],
+                            "severity": r["severity"], "status": r["status"],
+                            "signal_count": r["signal_count"] or 0,
+                            "first_seen": r["first_seen"].isoformat() if r["first_seen"] else "",
+                            "last_seen": r["last_seen"].isoformat() if r["last_seen"] else "",
+                            "rca_output": r["rca_output"],
+                            "evidence": _json.loads(r["evidence"]) if isinstance(r["evidence"], str) else (r["evidence"] or {}),
+                            "classification": _json.loads(r["classification"]) if isinstance(r["classification"], str) else r["classification"],
+                            "remediation_options": _json.loads(r["remediation_options"]) if isinstance(r["remediation_options"], str) else (r["remediation_options"] or []),
+                            "summary": None,
+                            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+                            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
+                        }
+                        self._incidents[inc["id"]] = inc
+                        key = self._key(inc["namespace"], inc["cluster_id"])
+                        self._index[key] = inc["id"]
+                    if rows:
+                        logger.info("Loaded %d incidents from DB", len(rows))
+                finally:
+                    await conn.close()
+
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_load())
+            loop.close()
+        except Exception as e:
+            logger.debug("No incidents to load: %s", e)
+
+    def _persist(self, inc: dict):
+        try:
+            import json as _json
+            from app.db import enqueue_write
+            enqueue_write("incidents", {
+                "id": inc["id"],
+                "cluster_id": inc["cluster_id"],
+                "namespace": inc["namespace"],
+                "failure_class": inc.get("failure_class"),
+                "severity": inc["severity"],
+                "status": inc["status"],
+                "signal_count": inc["signal_count"],
+                "first_seen": inc.get("first_seen"),
+                "last_seen": inc.get("last_seen"),
+                "rca_output": inc.get("rca_output"),
+                "evidence": _json.dumps(inc.get("evidence", {})),
+                "classification": _json.dumps(inc.get("classification")) if inc.get("classification") else None,
+                "remediation_options": _json.dumps(inc.get("remediation_options", [])),
+            })
+        except Exception as e:
+            logger.debug("Incident persist failed: %s", e)
 
     def _key(self, namespace: str, cluster_id: str) -> str:
         return f"{cluster_id}:{namespace}"
@@ -44,6 +111,7 @@ class IncidentManager:
                 if SEV_RANK.get(severity, 0) > SEV_RANK.get(inc["severity"], 0):
                     inc["severity"] = severity
                 inc["updated_at"] = datetime.now(timezone.utc).isoformat()
+                self._persist(inc)
                 return inc
 
         incident_id = str(uuid4())
@@ -78,6 +146,7 @@ class IncidentManager:
         }
         self._incidents[incident_id] = inc
         self._index[key] = incident_id
+        self._persist(inc)
         return inc
 
     def _find_open(self, namespace: str, cluster_id: str) -> Optional[dict]:
@@ -104,6 +173,7 @@ class IncidentManager:
         }
         inc["evidence"]["classifications"].append(inc["classification"])
         inc["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._persist(inc)
         return inc
 
     def add_inference(self, namespace: str, cluster_id: str,
@@ -117,9 +187,10 @@ class IncidentManager:
             "ts": datetime.now(timezone.utc).isoformat(),
         }
         inc["evidence"]["inferences"].append(inference_entry)
-        if task_type == "root_cause_analysis":
+        if task_type in ("root_cause_analysis", "cross_cluster_correlation"):
             inc["rca_output"] = output
         inc["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._persist(inc)
         return inc
 
     def add_remediation_option(self, namespace: str, cluster_id: str,
@@ -132,6 +203,7 @@ class IncidentManager:
         inc["remediation_options"].append(option)
         inc["evidence"]["remediations_suggested"].append(option)
         inc["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._persist(inc)
         return inc
 
     def resolve_incident(self, incident_id: str) -> dict:
@@ -143,6 +215,7 @@ class IncidentManager:
         key = self._key(inc["namespace"], inc["cluster_id"])
         if self._index.get(key) == incident_id:
             del self._index[key]
+        self._persist(inc)
         return inc
 
     def list_incidents(self, status: str = None) -> List[dict]:

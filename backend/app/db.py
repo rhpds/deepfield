@@ -97,7 +97,7 @@ async def execute(sql: str, *args):
 _ALLOWED_TABLES = frozenset({
     "signals", "decisions", "findings", "inferences", "remediations",
     "agent_stats_snapshots", "session_snapshots", "metrics_snapshots",
-    "cluster_profiles", "rubric_evaluations",
+    "cluster_profiles", "rubric_evaluations", "incidents",
 })
 
 
@@ -190,7 +190,7 @@ def _flush_batch_sync(batch: list, db_url: str):
                         placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
                         col_names = ", ".join(cols)
                         try:
-                            upsert_tables = {"cluster_profiles": "cluster_id"}
+                            upsert_tables = {"cluster_profiles": "cluster_id", "incidents": "id"}
                             if table in upsert_tables:
                                 pk = upsert_tables[table]
                                 update_cols = [c for c in cols if c != pk]
