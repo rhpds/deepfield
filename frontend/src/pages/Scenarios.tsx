@@ -22,6 +22,11 @@ interface Step {
   reason?: string;
 }
 
+interface RubricEval {
+  overall: string;
+  rubrics: Record<string, { score: string; checks: Array<[string, string]> }>;
+}
+
 interface RunResult {
   scenario_id: string;
   name: string;
@@ -33,10 +38,16 @@ interface RunResult {
   started_at?: string;
   completed_at?: string;
   incident?: Record<string, unknown>;
+  rubric_evaluation?: RubricEval;
 }
 
 const STATUS_COLORS: Record<string, string> = {
   pass: '#3E8635', fail: '#C9190B', error: '#C9190B', running: '#F0AB00',
+};
+const SCORE_COLORS: Record<string, string> = { healthy: '#3E8635', warning: '#F0AB00', failing: '#C9190B' };
+const RUBRIC_LABELS: Record<string, string> = {
+  compression_quality: 'Compression', classification_accuracy: 'Classification',
+  inference_value: 'Inference', signal_coverage: 'Coverage', tuning_safety: 'Safety',
 };
 
 export default function Scenarios() {
@@ -212,6 +223,30 @@ export default function Scenarios() {
                                 </span>
                                 <span className="text-white font-medium">{check.check.replace(/_/g, ' ')}</span>
                                 <span className="text-[#6A6E73] flex-1">{check.detail}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quality Rubrics */}
+                      {result.rubric_evaluation && (
+                        <div>
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">Quality Rubrics</div>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded"
+                              style={{ backgroundColor: `${SCORE_COLORS[result.rubric_evaluation.overall] || '#6A6E73'}20`, color: SCORE_COLORS[result.rubric_evaluation.overall] || '#6A6E73' }}>
+                              {result.rubric_evaluation.overall?.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            {Object.entries(result.rubric_evaluation.rubrics).map(([key, rubric]) => (
+                              <div key={key} className="bg-[#1a1a1a] rounded px-3 py-2 flex-1 text-center"
+                                style={{ borderTop: `2px solid ${SCORE_COLORS[rubric.score] || '#6A6E73'}` }}>
+                                <div className="text-[10px] text-[#6A6E73] uppercase">{RUBRIC_LABELS[key] || key}</div>
+                                <div className="text-xs font-bold mt-1" style={{ color: SCORE_COLORS[rubric.score] || '#6A6E73' }}>
+                                  {rubric.score?.toUpperCase()}
+                                </div>
                               </div>
                             ))}
                           </div>

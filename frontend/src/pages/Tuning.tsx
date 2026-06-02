@@ -33,7 +33,25 @@ interface ProfileData {
   model_health: Record<string, { calls: number; errors: number; error_rate: number; avg_latency: number }>;
 }
 
-const SCORE_COLORS = { healthy: '#3E8635', warning: '#F0AB00', failing: '#C9190B' };
+interface HistoryEntry {
+  timestamp: string;
+  overall: string;
+  rubrics: Record<string, string>;
+  source: string;
+}
+
+interface HistoryData {
+  evaluations: HistoryEntry[];
+  trend: { overall: string; rubrics: Record<string, string> };
+}
+
+const SCORE_COLORS: Record<string, string> = { healthy: '#3E8635', warning: '#F0AB00', failing: '#C9190B' };
+const TREND_ICONS: Record<string, { symbol: string; color: string }> = {
+  improving: { symbol: '▲', color: '#3E8635' },
+  degrading: { symbol: '▼', color: '#C9190B' },
+  stable: { symbol: '—', color: '#6A6E73' },
+  insufficient_data: { symbol: '·', color: '#6A6E73' },
+};
 const RUBRIC_LABELS: Record<string, string> = {
   compression_quality: 'Compression',
   classification_accuracy: 'Classification',
@@ -46,19 +64,22 @@ export default function Tuning() {
   const [evaluation, setEvaluation] = useState<EvalResult | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [history, setHistory] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [evalRes, propRes, profRes] = await Promise.all([
+        const [evalRes, propRes, profRes, histRes] = await Promise.all([
           fetch('/api/v1/tuning/evaluate/infra01'),
           fetch('/api/v1/tuning/proposals'),
           fetch('/api/v1/tuning/profile/infra01'),
+          fetch('/api/v1/tuning/evaluate/infra01/history'),
         ]);
         if (evalRes.ok) setEvaluation(await evalRes.json());
         if (propRes.ok) { const d = await propRes.json(); setProposals(d.proposals || []); }
         if (profRes.ok) setProfile(await profRes.json());
+        if (histRes.ok) setHistory(await histRes.json());
       } catch { /* */ }
       setLoading(false);
     }
@@ -97,23 +118,54 @@ export default function Tuning() {
       {/* Rubric cards */}
       {evaluation && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {Object.entries(evaluation.rubrics).map(([key, rubric]) => (
-            <div key={key} className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4"
-              style={{ borderTop: `3px solid ${SCORE_COLORS[rubric.score]}` }}>
-              <div className="text-xs text-[#6A6E73] uppercase tracking-wider mb-2">{RUBRIC_LABELS[key] || key}</div>
-              <div className="text-lg font-bold mb-3" style={{ color: SCORE_COLORS[rubric.score], fontFamily: 'Red Hat Display' }}>
-                {rubric.score.toUpperCase()}
+          {Object.entries(evaluation.rubrics).map(([key, rubric]) => {
+            const trend = history?.trend?.rubrics?.[key];
+            const ti = trend ? TREND_ICONS[trend] || TREND_ICONS.stable : null;
+            return (
+              <div key={key} className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4"
+                style={{ borderTop: `3px solid ${SCORE_COLORS[rubric.score]}` }}>
+                <div className="text-xs text-[#6A6E73] uppercase tracking-wider mb-2">{RUBRIC_LABELS[key] || key}</div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg font-bold" style={{ color: SCORE_COLORS[rubric.score], fontFamily: 'Red Hat Display' }}>
+                    {rubric.score.toUpperCase()}
+                  </span>
+                  {ti && <span className="text-xs font-bold" style={{ color: ti.color }}>{ti.symbol}</span>}
+                </div>
+                <div className="space-y-1">
+                  {rubric.checks.map(([name, level]) => (
+                    <div key={name} className="flex items-center gap-2 text-[10px]">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SCORE_COLORS[level as keyof typeof SCORE_COLORS] || '#6A6E73' }} />
+                      <span className="text-[#6A6E73]">{name.replace(/_/g, ' ')}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1">
-                {rubric.checks.map(([name, level]) => (
-                  <div key={name} className="flex items-center gap-2 text-[10px]">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SCORE_COLORS[level as keyof typeof SCORE_COLORS] || '#6A6E73' }} />
-                    <span className="text-[#6A6E73]">{name.replace(/_/g, ' ')}</span>
-                  </div>
-                ))}
-              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Rubric History */}
+      {history && history.evaluations.length > 0 && (
+        <div className="border border-[#333] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+              Evaluation History ({history.evaluations.length})
             </div>
-          ))}
+            {history.trend?.overall && (
+              <span className="text-xs font-bold" style={{ color: (TREND_ICONS[history.trend.overall] || TREND_ICONS.stable).color }}>
+                {(TREND_ICONS[history.trend.overall] || TREND_ICONS.stable).symbol} {history.trend.overall}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {history.evaluations.slice(-20).map((e, i) => (
+              <div key={i} className="flex flex-col items-center gap-0.5" title={`${new Date(e.timestamp).toLocaleTimeString()} — ${e.overall} (${e.source})`}>
+                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: SCORE_COLORS[e.overall] || '#6A6E73' }} />
+                {i % 5 === 0 && <span className="text-[8px] text-[#6A6E73]">{new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

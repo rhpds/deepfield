@@ -53,12 +53,31 @@ function outcomeStyle(outcome: string) {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+interface WorkerStat {
+  worker: string;
+  topic: string;
+  group_id: string;
+  messages_processed: number;
+  errors: number;
+  alive: boolean;
+  uptime_s: number;
+}
+
+interface WorkersData {
+  workers: WorkerStat[];
+  total_processed: number;
+  total_errors: number;
+  status: string;
+  replays?: Array<Record<string, unknown>>;
+}
+
 export default function SignalPipeline() {
   const { range } = useTimeRange();
 
   /* SSE live state */
   const [metrics, setMetrics] = useState<StreamMetrics>({});
   const [modelStats, setModelStats] = useState<Record<string, { calls: number }>>({});
+  const [workers, setWorkers] = useState<WorkersData | null>(null);
 
   /* REST state */
   const [agents, setAgents] = useState<Record<string, AgentStats> | null>(null);
@@ -88,6 +107,19 @@ export default function SignalPipeline() {
     es.addEventListener('session', handler);
 
     return () => es.close();
+  }, []);
+
+  /* ----- REST polling for Kafka workers ----- */
+  useEffect(() => {
+    async function fetchWorkers() {
+      try {
+        const resp = await fetch('/api/v1/workers');
+        if (resp.ok) setWorkers(await resp.json());
+      } catch { /* */ }
+    }
+    fetchWorkers();
+    const poll = setInterval(fetchWorkers, 5000);
+    return () => clearInterval(poll);
   }, []);
 
   /* ----- REST polling for agent data ----- */
@@ -348,6 +380,72 @@ export default function SignalPipeline() {
           </div>
         )}
       </div>
+
+      {/* Kafka Workers */}
+      {workers && workers.workers.length > 0 && (
+        <div className="border border-[#333] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+              Kafka Consumer Workers
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-[#6A6E73]">{workers.total_processed.toLocaleString()} processed</span>
+              {workers.total_errors > 0 && <span className="text-[#C9190B] font-bold">{workers.total_errors} errors</span>}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {workers.workers.map(w => (
+              <div key={w.worker} className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4"
+                style={{ borderTop: `3px solid ${w.alive ? '#3E8635' : '#C9190B'}` }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-white font-semibold">{w.worker.replace('Worker', '')}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${w.alive ? 'bg-[#3E8635]/20 text-[#3E8635]' : 'bg-[#C9190B]/20 text-[#C9190B]'}`}>
+                    {w.alive ? 'ALIVE' : 'DOWN'}
+                  </span>
+                </div>
+                <div className="text-xs text-[#6A6E73] font-mono mb-2">{w.topic}</div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div className="text-lg font-bold text-white tabular-nums">{w.messages_processed.toLocaleString()}</div>
+                    <div className="text-[10px] text-[#6A6E73]">msgs</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold tabular-nums" style={{ color: w.errors > 0 ? '#C9190B' : '#3E8635' }}>{w.errors}</div>
+                    <div className="text-[10px] text-[#6A6E73]">errors</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-white tabular-nums">{Math.round(w.uptime_s / 60)}m</div>
+                    <div className="text-[10px] text-[#6A6E73]">uptime</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Active Replays */}
+          {workers.replays && workers.replays.length > 0 && (
+            <div className="mt-4 border-t border-[#333] pt-3">
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-2">
+                Replays ({workers.replays.length})
+              </div>
+              <div className="space-y-2">
+                {workers.replays.map((r, i) => (
+                  <div key={i} className="bg-[#1a1a1a] rounded px-3 py-2 flex items-center gap-3 text-xs">
+                    <span className="font-bold px-2 py-0.5 rounded"
+                      style={{ backgroundColor: `${r.status === 'completed' ? '#3E8635' : r.status === 'running' ? '#F0AB00' : '#C9190B'}20`,
+                               color: r.status === 'completed' ? '#3E8635' : r.status === 'running' ? '#F0AB00' : '#C9190B' }}>
+                      {String(r.status).toUpperCase()}
+                    </span>
+                    <span className="text-[#6A6E73] font-mono">{String(r.replay_id).slice(0, 8)}</span>
+                    <span className="text-white">{r.processed as number} msgs</span>
+                    {r.errors as number > 0 && <span className="text-[#C9190B]">{r.errors as number} errors</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
