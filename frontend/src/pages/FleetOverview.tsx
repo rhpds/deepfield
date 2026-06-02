@@ -1,20 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTimeRange } from '../components/TimeRangeContext';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-
-interface StreamState {
-  session_id: string;
-  status: string;
-  metrics: Record<string, number>;
-  totals: Record<string, number>;
-  model_stats: Record<string, { calls: number; avg_latency: number; avg_tps: number }>;
-  agent_log: Array<Record<string, unknown>>;
-  live_inference: { last_model?: string; last_latency_ms?: number; in_flight?: number; completed?: number };
-}
 
 interface ObsCluster {
   cluster_id: string;
@@ -85,61 +75,31 @@ export default function FleetOverview() {
   const navigate = useNavigate();
   const { range } = useTimeRange();
 
-  /* SSE live state */
-  const [live, setLive] = useState<StreamState | null>(null);
-
   /* Observatory REST state */
   const [clusters, setClusters] = useState<ObsCluster[] | null>(null);
   const [signals, setSignals] = useState<ObsSignal[] | null>(null);
   const [agents, setAgents] = useState<ObsAgent[] | null>(null);
 
-  /* ----- SSE connection (throttled to 2s updates) -----  */
-  const latestSSE = useRef<StreamState | null>(null);
-  const sseTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /* ----- REST polling for observatory + metrics (windowed) ----- */
+  const [windowedMetrics, setWindowedMetrics] = useState<Record<string, unknown> | null>(null);
 
-  const flushSSE = useCallback(() => {
-    if (latestSSE.current) {
-      setLive(latestSSE.current);
-    }
-  }, []);
-
-  useEffect(() => {
-    const es = new EventSource('/api/v1/stream');
-
-    const handleEvent = (e: MessageEvent) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.metrics) latestSSE.current = d;
-      } catch { /* ignore */ }
-    };
-
-    es.addEventListener('live', handleEvent);
-    es.addEventListener('session', handleEvent);
-
-    sseTimer.current = setInterval(flushSSE, 2000);
-
-    return () => {
-      es.close();
-      if (sseTimer.current) clearInterval(sseTimer.current);
-    };
-  }, [flushSSE]);
-
-  /* ----- REST polling for observatory data ----- */
   useEffect(() => {
     let cancelled = false;
 
     async function fetchAll() {
       try {
-        const windowParam = `window=${range.key}`;
-        const [clRes, sigRes, agRes] = await Promise.all([
+        const w = `window=${range.key}`;
+        const [clRes, sigRes, agRes, mRes] = await Promise.all([
           fetch('/api/v1/observatory/clusters'),
-          fetch(`/api/v1/observatory/signals?${windowParam}`),
-          fetch(`/api/v1/observatory/agents?${windowParam}`),
+          fetch(`/api/v1/observatory/signals?${w}`),
+          fetch(`/api/v1/observatory/agents?${w}`),
+          fetch(`/api/v1/metrics?${w}`),
         ]);
         if (cancelled) return;
         const clData = await clRes.json();
         const sigData = await sigRes.json();
         const agData = await agRes.json();
+        if (mRes.ok) setWindowedMetrics(await mRes.json());
 
         if (clData.clusters) {
           const cl = clData.clusters;
@@ -165,35 +125,18 @@ export default function FleetOverview() {
     }
 
     fetchAll();
-    const poll = setInterval(fetchAll, 30000);
-    return () => { cancelled = true; clearInterval(poll); };
-  }, [range.key]);
-
-  /* ----- Windowed metrics from /api/v1/metrics ----- */
-  const [windowedMetrics, setWindowedMetrics] = useState<Record<string, unknown> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchMetrics() {
-      try {
-        const resp = await fetch(`/api/v1/metrics?window=${range.key}`);
-        if (!cancelled) setWindowedMetrics(await resp.json());
-      } catch { /* */ }
-    }
-    fetchMetrics();
-    const poll = setInterval(fetchMetrics, 10000);
+    const poll = setInterval(fetchAll, 10000);
     return () => { cancelled = true; clearInterval(poll); };
   }, [range.key]);
 
   const wm = windowedMetrics as Record<string, unknown> | null;
   const funnel = (wm?.funnel ?? {}) as Record<string, number>;
 
-  /* ----- Derived values ----- */
-  const m = live?.metrics;
-  const clusterCount = m?.clusters_monitored ?? clusters?.length ?? 0;
-  const signalsPerSec = (wm?.signals_per_second as number) ?? m?.signals_per_second ?? 0;
-  const compressionRatio = (wm?.compression_ratio as number) ?? m?.compression_ratio ?? 0;
-  const inFlight = (wm?.inference_in_flight as number) ?? m?.inference_in_flight ?? 0;
+  /* ----- Derived values (all from windowed metrics, no SSE) ----- */
+  const clusterCount = clusters?.length ?? 0;
+  const signalsPerSec = (wm?.signals_per_second as number) ?? 0;
+  const compressionRatio = (wm?.compression_ratio as number) ?? 0;
+  const inFlight = (wm?.inference_in_flight as number) ?? 0;
 
   /* Funnel values — from windowed /api/v1/metrics endpoint */
   const rawSignals = funnel.raw ?? 0;
@@ -211,8 +154,13 @@ export default function FleetOverview() {
   ];
   const funnelMax = Math.max(...funnelSteps.map((s) => s.value), 1);
 
-  /* Model stats */
-  const modelEntries = live?.model_stats ? Object.entries(live.model_stats) : [];
+  /* Model stats — from windowed metrics */
+  const wmModels = (wm?.models ?? {}) as Record<string, { total_calls?: number; calls?: number; avg_latency?: number; avg_tps?: number }>;
+  const modelEntries = Object.entries(wmModels).map(([name, v]) => [name, {
+    calls: v.total_calls ?? v.calls ?? 0,
+    avg_latency: v.avg_latency ?? 0,
+    avg_tps: v.avg_tps ?? 0,
+  }] as [string, { calls: number; avg_latency: number; avg_tps: number }]);
   const isMicroModel = (name: string) => {
     const l = name.toLowerCase();
     return l.includes('cpu') || l.includes('xeon') || l.includes('granite_2b') || l.includes('phi3_mini') || l.includes('qwen25');
@@ -220,8 +168,10 @@ export default function FleetOverview() {
   const microModels = modelEntries.filter(([name]) => isMicroModel(name));
   const macroModels = modelEntries.filter(([name]) => !isMicroModel(name));
 
-  /* Recent signals — last 10 (backend already filters by window) */
-  const recentSignals = (signals ?? []).slice(-10).reverse();
+  /* Recent signals — from observatory or windowed metrics fallback */
+  const obsSignals = signals ?? [];
+  const wmSignals = ((wm?.recent_signals ?? []) as ObsSignal[]);
+  const recentSignals = (obsSignals.length > 0 ? obsSignals : wmSignals).slice(-20).reverse();
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
@@ -239,10 +189,10 @@ export default function FleetOverview() {
           </h1>
           <p className="text-sm text-[#6A6E73]">Signal intelligence across your fleet</p>
         </div>
-        {!live && (
+        {!windowedMetrics && (
           <div className="flex items-center gap-2 text-xs text-[#6A6E73]">
             <span className="w-2 h-2 rounded-full bg-[#6A6E73] animate-pulse" />
-            Connecting to live stream...
+            Loading metrics...
           </div>
         )}
       </div>
