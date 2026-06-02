@@ -137,14 +137,21 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
     if not recent_inferences and store:
         recent_inferences = store.get_recent_inferences(20)
 
+    window_seconds = {"5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800}.get(window, 3600)
+    raw_total = funnel.get("raw", 0)
+    windowed_sps = round(raw_total / max(window_seconds, 1), 1) if raw_total > 0 else live_metrics.get("signals_per_second", 0)
+    retained_total = funnel.get("retained", 0)
+    tasks_total = funnel.get("tasks", 0)
+    windowed_cr = round(raw_total / max(tasks_total, 1), 1) if tasks_total > 0 else live_metrics.get("compression_ratio", 0)
+
     return {
         "window": window,
         "agents": agents,
         "signals": signal_summary,
         "models": models,
         "funnel": funnel,
-        "compression_ratio": live_metrics.get("compression_ratio", 0),
-        "signals_per_second": live_metrics.get("signals_per_second", 0),
+        "compression_ratio": windowed_cr,
+        "signals_per_second": windowed_sps,
         "inference_in_flight": live_metrics.get("inference_in_flight", 0),
         "recent_signals": recent_signals,
         "recent_decisions": recent_decisions,
