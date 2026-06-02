@@ -4,8 +4,41 @@ Each rubric produces a score: healthy, warning, or failing.
 Scores are based on real production metrics, not test fixtures.
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict
+
+
+@dataclass
+class RubricConfig:
+    compression_ratio_healthy: float = 50.0
+    compression_ratio_warning: float = 10.0
+    noise_reduction_healthy: float = 0.15
+    noise_reduction_warning: float = 0.05
+    suppress_rate_healthy_min: float = 0.05
+    suppress_rate_healthy_max: float = 0.25
+    finding_diversity_healthy: int = 3
+    json_compliance_healthy: float = 0.90
+    json_compliance_warning: float = 0.70
+    taxonomy_match_healthy: float = 0.80
+    taxonomy_match_warning: float = 0.50
+    inconsistent_names_healthy: float = 0.05
+    inconsistent_names_warning: float = 0.20
+    unclassified_healthy: float = 0.10
+    unclassified_warning: float = 0.30
+    error_rate_healthy: float = 0.05
+    error_rate_warning: float = 0.15
+    rca_tokens_healthy: float = 300.0
+    rca_tokens_warning: float = 100.0
+    namespaces_healthy: int = 30
+    namespaces_warning: int = 10
+    agents_healthy: int = 8
+    agents_warning: int = 4
+    signal_types_healthy: int = 10
+    signal_types_warning: int = 5
+
+
+DEFAULT_CONFIG = RubricConfig()
 
 
 def _score(checks: list) -> str:

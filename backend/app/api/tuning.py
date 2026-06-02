@@ -172,4 +172,20 @@ async def evaluate_cluster(cluster_id: str):
     )
     with _eval_lock:
         _eval_cache[cluster_id] = {"result": result, "_fetched_at": time.monotonic()}
+
+    from app.analysis.rubric_history import get_rubric_history
+    get_rubric_history().record(cluster_id, result, source="evaluate")
+
     return result
+
+
+@router.get("/evaluate/{cluster_id}/history")
+async def get_evaluation_history(cluster_id: str):
+    """Get historical rubric evaluations with trend detection."""
+    from app.analysis.rubric_history import get_rubric_history
+    history = get_rubric_history()
+    return {
+        "cluster_id": cluster_id,
+        "evaluations": history.get_history(cluster_id),
+        "trend": history.get_trend(cluster_id),
+    }

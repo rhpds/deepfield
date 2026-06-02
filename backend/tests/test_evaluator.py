@@ -132,3 +132,101 @@ class TestOverallEvaluation:
         assert len(result["rubrics"]) == 5
         assert "overall" in result
         assert result["overall"] in ("healthy", "warning", "failing")
+
+
+class TestRubricConfig:
+    def test_defaults_match_hardcoded(self):
+        from app.analysis.evaluator import RubricConfig, DEFAULT_CONFIG
+        cfg = RubricConfig()
+        assert cfg.compression_ratio_healthy == 50.0
+        assert cfg.compression_ratio_warning == 10.0
+        assert cfg.error_rate_healthy == 0.05
+        assert cfg is not DEFAULT_CONFIG
+        assert cfg.compression_ratio_healthy == DEFAULT_CONFIG.compression_ratio_healthy
+
+    def test_overrides_are_independent(self):
+        from app.analysis.evaluator import RubricConfig
+        custom = RubricConfig(compression_ratio_healthy=20.0)
+        default = RubricConfig()
+        assert custom.compression_ratio_healthy == 20.0
+        assert default.compression_ratio_healthy == 50.0
+
+
+class TestRubricHistory:
+    def _make_evaluation(self, overall="healthy", rubric_scores=None):
+        return {
+            "overall": overall,
+            "rubrics": {
+                "compression_quality": {"score": rubric_scores.get("compression_quality", overall) if rubric_scores else overall},
+                "classification_accuracy": {"score": rubric_scores.get("classification_accuracy", overall) if rubric_scores else overall},
+                "inference_value": {"score": rubric_scores.get("inference_value", overall) if rubric_scores else overall},
+                "signal_coverage": {"score": rubric_scores.get("signal_coverage", overall) if rubric_scores else overall},
+                "tuning_safety": {"score": rubric_scores.get("tuning_safety", overall) if rubric_scores else overall},
+            },
+        }
+
+    def test_records_evaluation(self):
+        from app.analysis.rubric_history import RubricHistory
+        h = RubricHistory()
+        h.record("test-cluster", self._make_evaluation("healthy"))
+        entries = h.get_history("test-cluster")
+        assert len(entries) == 1
+        assert entries[0]["overall"] == "healthy"
+
+    def test_trend_detects_improvement(self):
+        from app.analysis.rubric_history import RubricHistory
+        h = RubricHistory()
+        for _ in range(3):
+            h.record("trend-test", self._make_evaluation("failing"))
+        for _ in range(3):
+            h.record("trend-test", self._make_evaluation("healthy"))
+        trend = h.get_trend("trend-test")
+        assert trend["overall"] == "improving"
+
+    def test_trend_detects_degradation(self):
+        from app.analysis.rubric_history import RubricHistory
+        h = RubricHistory()
+        for _ in range(3):
+            h.record("degrade-test", self._make_evaluation("healthy"))
+        for _ in range(3):
+            h.record("degrade-test", self._make_evaluation("failing"))
+        trend = h.get_trend("degrade-test")
+        assert trend["overall"] == "degrading"
+
+    def test_trend_stable_when_unchanged(self):
+        from app.analysis.rubric_history import RubricHistory
+        h = RubricHistory()
+        for _ in range(6):
+            h.record("stable-test", self._make_evaluation("warning"))
+        trend = h.get_trend("stable-test")
+        assert trend["overall"] == "stable"
+
+    def test_insufficient_data(self):
+        from app.analysis.rubric_history import RubricHistory
+        h = RubricHistory()
+        h.record("short", self._make_evaluation("healthy"))
+        trend = h.get_trend("short")
+        assert trend["overall"] == "insufficient_data"
+
+
+class TestScenarioRubricIntegration:
+    def test_scenario_checks_map_to_rubric_inputs(self):
+        from app.testing.scenario_runner import _evaluate_scenario, Scenario
+        scenario = Scenario(
+            id="test", name="Test", namespace="deepfield-e2e",
+            inject_type="synthetic_signal",
+        )
+        result = {
+            "checks": [
+                {"check": "incident_created", "passed": True},
+                {"check": "severity_correct", "passed": True},
+                {"check": "classification_correct", "passed": True},
+                {"check": "has_signals", "passed": True},
+                {"check": "rca_produced", "passed": True},
+                {"check": "has_remediation", "passed": True},
+            ],
+            "incident": {"signal_count": 3},
+        }
+        evaluation = _evaluate_scenario(scenario, result)
+        assert "rubrics" in evaluation
+        assert evaluation["overall"] in ("healthy", "warning", "failing")

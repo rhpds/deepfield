@@ -97,7 +97,7 @@ async def execute(sql: str, *args):
 _ALLOWED_TABLES = frozenset({
     "signals", "decisions", "findings", "inferences", "remediations",
     "agent_stats_snapshots", "session_snapshots", "metrics_snapshots",
-    "cluster_profiles",
+    "cluster_profiles", "rubric_evaluations",
 })
 
 
