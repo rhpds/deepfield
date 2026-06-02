@@ -25,7 +25,7 @@ def _load_cluster_configs() -> list:
         except json.JSONDecodeError:
             pass
     configs = []
-    for i in range(1, 5):
+    for i in range(1, 20):
         name = os.getenv(f"CLUSTER_{i}_NAME", "")
         api_url = os.getenv(f"CLUSTER_{i}_API_URL", "")
         token = os.getenv(f"CLUSTER_{i}_TOKEN", "")
