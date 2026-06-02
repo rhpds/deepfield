@@ -1,4 +1,5 @@
-import { Routes, Route, NavLink, Outlet } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { Routes, Route, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TimeRangeProvider, TimeRangePicker } from './components/TimeRangeContext';
 
@@ -15,15 +16,64 @@ import Incidents from './pages/Incidents';
 import Tuning from './pages/Tuning';
 import Scenarios from './pages/Scenarios';
 
+interface NavGroup {
+  label: string;
+  items: { to: string; label: string }[];
+}
+
+function NavDropdown({ group }: { group: NavGroup }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const isGroupActive = group.items.some(i => location.pathname === i.to);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(!open)}
+        className={`px-3 py-2 rounded text-sm font-medium transition flex items-center gap-1 ${isGroupActive ? 'bg-white/15 text-white' : 'text-[#6A6E73] hover:text-white hover:bg-white/10'}`}>
+        {group.label}
+        <span className="text-[10px]">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-[#212121] border border-[#333] rounded-lg shadow-xl py-1 min-w-[140px] z-50">
+          {group.items.map(({ to, label }) => (
+            <NavLink key={to} to={to} end={to === '/'}
+              onClick={() => setOpen(false)}
+              className={({ isActive }) =>
+                `block px-4 py-2 text-sm transition ${isActive ? 'text-white bg-white/10' : 'text-[#a0a0a0] hover:text-white hover:bg-white/5'}`
+              }>
+              {label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppLayout() {
-  const navItems = [
-    { to: '/', label: 'Fleet' },
-    { to: '/pipeline', label: 'Pipeline' },
-    { to: '/live', label: 'Live Flow' },
-    { to: '/llm', label: 'LLM' },
-    { to: '/incidents', label: 'Incidents' },
-    { to: '/tuning', label: 'Quality' },
-    { to: '/scenarios', label: 'Scenarios' },
+  const navGroups: NavGroup[] = [
+    { label: 'Monitor', items: [
+      { to: '/', label: 'Fleet Overview' },
+      { to: '/incidents', label: 'Incidents' },
+      { to: '/live', label: 'Live Flow' },
+    ]},
+    { label: 'Pipeline', items: [
+      { to: '/pipeline', label: 'Agents' },
+      { to: '/llm', label: 'LLM Models' },
+    ]},
+    { label: 'Quality', items: [
+      { to: '/tuning', label: 'Rubrics' },
+      { to: '/scenarios', label: 'Scenarios' },
+    ]},
   ];
 
   return (
@@ -39,13 +89,8 @@ function AppLayout() {
               <span className="text-lg font-semibold tracking-tight" style={{ fontFamily: 'Red Hat Display, sans-serif' }}>DeepField</span>
             </div>
             <nav className="flex gap-1">
-              {navItems.map(({ to, label }) => (
-                <NavLink key={to} to={to} end={to === '/'}
-                  className={({ isActive }) =>
-                    `px-3 py-2 rounded text-sm font-medium transition ${isActive ? 'bg-white/15 text-white' : 'text-[#6A6E73] hover:text-white hover:bg-white/10'}`
-                  }>
-                  {label}
-                </NavLink>
+              {navGroups.map(group => (
+                <NavDropdown key={group.label} group={group} />
               ))}
             </nav>
             <TimeRangePicker />
