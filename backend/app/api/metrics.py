@@ -107,10 +107,7 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
     if raw == 0 and session and hasattr(session, 'totals'):
         t = session.totals
         raw_total = t.get("raw_signals", 0)
-        dropped = t.get("dropped", 0)
-        retained = max(0, raw_total - dropped)
-        if store:
-            retained = len(store.recent_signals)
+        retained = max(0, raw_total - t.get("dropped", 0))
         funnel = {
             "raw": raw_total,
             "retained": retained,
