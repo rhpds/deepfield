@@ -125,6 +125,9 @@ class StreamingSession:
         self._finding_cooldown: dict = {}
         self._finding_cooldown_secs = 60
 
+        # Correlation buffer — accumulates kept signals across batches
+        self._correlation_buffer: list = []
+
         # Time-series snapshots (every 2 seconds)
         self.snapshots: list = []
 
@@ -377,6 +380,8 @@ class StreamingSession:
                     if norm.severity in ("info", "low"):
                         continue
                     cluster_name = raw.source.split(":", 1)[-1] if ":" in raw.source else raw.source
+                    if "e2e" in raw.namespace:
+                        logger.warning("STORING E2E SIGNAL: ns=%s type=%s sev=%s", raw.namespace, raw.signal_type, norm.severity)
                     self.store.add_signal({
                         "signal_type": raw.signal_type, "namespace": raw.namespace,
                         "resource_kind": raw.resource_kind, "resource_name": raw.resource_name,
@@ -423,10 +428,16 @@ class StreamingSession:
                     logger.error("route_signals crashed: %s", e, exc_info=True)
 
             _phase = "correlate"
-            # ------ Correlate (isolated) ------
-            if len(kept) >= 2:
+            # ------ Correlate (isolated) — accumulate across batches ------
+            for s in kept:
+                self._correlation_buffer.append(s)
+            # Trim buffer to last 500 signals (rolling window)
+            if len(self._correlation_buffer) > 500:
+                self._correlation_buffer = self._correlation_buffer[-500:]
+
+            if len(self._correlation_buffer) >= 2:
                 try:
-                    findings = correlate(kept)
+                    findings = correlate(self._correlation_buffer)
                 except Exception as e:
                     logger.error("correlate crashed: %s", e, exc_info=True)
                     findings = []

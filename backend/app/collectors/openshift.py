@@ -289,5 +289,7 @@ class OpenShiftCollector:
         reason = item.get("reason", "")
         message = item.get("message", "")[:200]
         signal_type = f"event_{reason.lower()}" if reason else "event_unknown"
+        if "e2e" in ns:
+            logger.warning("E2E EVENT: ns=%s kind=%s name=%s reason=%s type=%s", ns, kind, name, reason, signal_type)
         self._signal_buffer.append(self._make_signal(ns, kind, name, signal_type,
             {"reason": reason, "message": message, "count": item.get("count", 1)}))
