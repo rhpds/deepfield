@@ -139,8 +139,16 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
 
     window_seconds = {"5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800}.get(window, 3600)
     raw_total = funnel.get("raw", 0)
-    windowed_sps = round(raw_total / max(window_seconds, 1), 1) if raw_total > 0 else live_metrics.get("signals_per_second", 0)
-    retained_total = funnel.get("retained", 0)
+
+    # Use actual uptime when in-memory data covers less than the requested window
+    import time
+    actual_seconds = window_seconds
+    if session and hasattr(session, '_window_start') and session._window_start > 0:
+        uptime = time.monotonic() - session._window_start
+        if uptime < window_seconds:
+            actual_seconds = max(uptime, 10)
+
+    windowed_sps = round(raw_total / max(actual_seconds, 1), 1) if raw_total > 0 else live_metrics.get("signals_per_second", 0)
     tasks_total = funnel.get("tasks", 0)
     windowed_cr = round(raw_total / max(tasks_total, 1), 1) if tasks_total > 0 else live_metrics.get("compression_ratio", 0)
 
