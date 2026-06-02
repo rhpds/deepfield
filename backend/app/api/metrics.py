@@ -103,6 +103,17 @@ async def get_metrics(window: str = Query("1h", description="Time window: 5m, 15
         "inferences": inf_count[0]["cnt"] if inf_count else 0,
     }
 
+    # Fall back to in-memory totals when DB has no data for this window
+    if raw == 0 and session and hasattr(session, 'totals'):
+        t = session.totals
+        funnel = {
+            "raw": t.get("raw_signals", 0),
+            "retained": t.get("raw_signals", 0) - t.get("dropped", 0),
+            "findings": t.get("findings", 0),
+            "tasks": t.get("reasoning_tasks", 0),
+            "inferences": t.get("inference_calls", 0),
+        }
+
     live_metrics = session.metrics if session else {}
 
     recent_signals = await db.query(
