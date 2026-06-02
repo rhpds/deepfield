@@ -101,20 +101,25 @@ SCENARIOS: Dict[str, Scenario] = {
         id="synthetic_oom",
         name="Synthetic OOM (Signal Only)",
         namespace="deepfield",
-        inject_type="synthetic_signal",
+        inject_type="synthetic_multi",
         inject_spec={
-            "signal_type": "pod_crashloop",
-            "namespace": "deepfield",
-            "resource_kind": "Pod",
-            "resource_name": "synthetic-oom-pod",
-            "severity": "critical",
-            "raw_payload": {"reason": "OOMKilled", "exitCode": 137, "message": "Container killed due to OOM"},
+            "signals": [
+                {"signal_type": "pod_crashloop", "namespace": "deepfield", "resource_kind": "Pod",
+                 "resource_name": "synthetic-oom-pod-1", "severity": "critical",
+                 "raw_payload": {"reason": "OOMKilled", "exitCode": 137}},
+                {"signal_type": "pod_crashloop", "namespace": "deepfield", "resource_kind": "Pod",
+                 "resource_name": "synthetic-oom-pod-2", "severity": "critical",
+                 "raw_payload": {"reason": "OOMKilled", "exitCode": 137}},
+                {"signal_type": "event_backoff", "namespace": "deepfield", "resource_kind": "Pod",
+                 "resource_name": "synthetic-oom-pod-1", "severity": "high",
+                 "raw_payload": {"reason": "BackOff", "message": "Back-off restarting failed container"}},
+            ],
         },
         expected_classification="oom_killed",
         expected_severity="critical",
         execute_remediation=False,
         cleanup_resources=[],
-        description="Injects a synthetic OOM signal without creating real resources. Tests pipeline processing only.",
+        description="Injects 3 synthetic OOM/crashloop signals. Tests full pipeline: correlation → inference → incident.",
     ),
 }
 
@@ -149,12 +154,14 @@ class ScenarioRunner:
             await self._resolve_existing_incidents(scenario.namespace)
             result["steps"].append({"step": "clear_existing", "status": "done"})
 
-            if scenario.inject_type == "synthetic_signal":
+            if scenario.inject_type == "synthetic_multi":
+                result["steps"].append(await self._inject_multi_signals(scenario))
+            elif scenario.inject_type == "synthetic_signal":
                 result["steps"].append(await self._inject_signal(scenario))
             else:
                 result["steps"].append(await self._inject_resource(scenario))
 
-            incident = await self._wait_for_incident(scenario.namespace, timeout=180)
+            incident = await self._wait_for_incident(scenario.namespace)
             result["incident"] = incident
 
             if incident:
@@ -194,6 +201,22 @@ class ScenarioRunner:
                     logger.info("Resolved existing incident %s for namespace %s", inc["id"][:8], namespace)
         except Exception as e:
             logger.warning("Failed to resolve existing incidents: %s", e)
+
+    async def _inject_multi_signals(self, scenario: Scenario) -> dict:
+        """Inject multiple signals to trigger correlation."""
+        import httpx
+        signals = scenario.inject_spec.get("signals", [])
+        injected = 0
+        for sig in signals:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.post(
+                        "http://localhost:8099/api/v1/session/signals/inject", json=sig)
+                    if resp.status_code == 200:
+                        injected += 1
+            except Exception:
+                pass
+        return {"step": "inject_multi_signals", "status": "ok", "injected": injected, "total": len(signals)}
 
     async def _inject_signal(self, scenario: Scenario) -> dict:
         import httpx

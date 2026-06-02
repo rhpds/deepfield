@@ -27,7 +27,7 @@ class TestScenarioDefinitions:
     def test_cleanup_resources_defined(self):
         from app.testing.scenario_runner import SCENARIOS
         for sid, s in SCENARIOS.items():
-            if s.inject_type != "synthetic_signal":
+            if s.inject_type not in ("synthetic_signal", "synthetic_multi"):
                 assert len(s.cleanup_resources) > 0, f"{sid} creates resources but has no cleanup"
 
 
