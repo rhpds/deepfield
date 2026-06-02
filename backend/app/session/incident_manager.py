@@ -22,48 +22,58 @@ class IncidentManager:
         self._load_from_db()
 
     def _load_from_db(self):
-        import os, asyncio, json as _json
+        import os, json as _json, threading
         db_url = os.getenv("DATABASE_URL", "")
         if not db_url:
             return
-        try:
-            import asyncpg
 
-            async def _load():
-                conn = await asyncpg.connect(db_url)
-                try:
-                    rows = await conn.fetch(
-                        "SELECT * FROM incidents WHERE status = 'open' ORDER BY last_seen DESC LIMIT 100"
-                    )
-                    for r in rows:
-                        inc = {
-                            "id": r["id"], "cluster_id": r["cluster_id"],
-                            "namespace": r["namespace"], "failure_class": r["failure_class"],
-                            "severity": r["severity"], "status": r["status"],
-                            "signal_count": r["signal_count"] or 0,
-                            "first_seen": r["first_seen"].isoformat() if r["first_seen"] else "",
-                            "last_seen": r["last_seen"].isoformat() if r["last_seen"] else "",
-                            "rca_output": r["rca_output"],
-                            "evidence": _json.loads(r["evidence"]) if isinstance(r["evidence"], str) else (r["evidence"] or {}),
-                            "classification": _json.loads(r["classification"]) if isinstance(r["classification"], str) else r["classification"],
-                            "remediation_options": _json.loads(r["remediation_options"]) if isinstance(r["remediation_options"], str) else (r["remediation_options"] or []),
-                            "summary": None,
-                            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
-                            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
-                        }
-                        self._incidents[inc["id"]] = inc
-                        key = self._key(inc["namespace"], inc["cluster_id"])
-                        self._index[key] = inc["id"]
-                    if rows:
-                        logger.info("Loaded %d incidents from DB", len(rows))
-                finally:
-                    await conn.close()
+        results = []
 
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(_load())
-            loop.close()
-        except Exception as e:
-            logger.debug("No incidents to load: %s", e)
+        def _sync_load():
+            try:
+                import asyncio, asyncpg
+                async def _do():
+                    conn = await asyncpg.connect(db_url)
+                    try:
+                        return await conn.fetch(
+                            "SELECT * FROM incidents WHERE status = 'open' ORDER BY last_seen DESC LIMIT 100"
+                        )
+                    finally:
+                        await conn.close()
+                loop = asyncio.new_event_loop()
+                results.extend(loop.run_until_complete(_do()) or [])
+                loop.close()
+            except Exception as e:
+                logger.debug("No incidents to load: %s", e)
+
+        t = threading.Thread(target=_sync_load)
+        t.start()
+        t.join(timeout=10)
+
+        for r in results:
+            try:
+                inc = {
+                    "id": r["id"], "cluster_id": r["cluster_id"],
+                    "namespace": r["namespace"], "failure_class": r["failure_class"],
+                    "severity": r["severity"], "status": r["status"],
+                    "signal_count": r["signal_count"] or 0,
+                    "first_seen": r["first_seen"].isoformat() if r["first_seen"] else "",
+                    "last_seen": r["last_seen"].isoformat() if r["last_seen"] else "",
+                    "rca_output": r["rca_output"],
+                    "evidence": _json.loads(r["evidence"]) if isinstance(r["evidence"], str) else (r["evidence"] or {}),
+                    "classification": _json.loads(r["classification"]) if isinstance(r["classification"], str) else r["classification"],
+                    "remediation_options": _json.loads(r["remediation_options"]) if isinstance(r["remediation_options"], str) else (r["remediation_options"] or []),
+                    "summary": None,
+                    "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+                    "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
+                }
+                self._incidents[inc["id"]] = inc
+                key = self._key(inc["namespace"], inc["cluster_id"])
+                self._index[key] = inc["id"]
+            except Exception:
+                pass
+        if results:
+            logger.info("Loaded %d incidents from DB", len(results))
 
     def _persist(self, inc: dict):
         try:

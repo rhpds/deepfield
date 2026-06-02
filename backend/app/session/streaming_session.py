@@ -179,42 +179,51 @@ class StreamingSession:
     def _load_totals_from_db() -> dict:
         """Seed cumulative totals from DB so dashboard isn't empty after restart."""
         defaults = {"raw_signals": 0, "reasoning_tasks": 0, "inference_calls": 0, "findings": 0, "dropped": 0, "retained": 0}
-        try:
-            import os, asyncio, asyncpg
-            db_url = os.getenv("DATABASE_URL", "")
-            if not db_url:
-                return defaults
-
-            async def _load():
-                conn = await asyncpg.connect(db_url)
-                try:
-                    row = await conn.fetchrow(
-                        "SELECT raw_signals, reasoning_tasks, inference_calls, findings, dropped "
-                        "FROM session_snapshots ORDER BY captured_at DESC LIMIT 1"
-                    )
-                    if row:
-                        return {
-                            "raw_signals": row["raw_signals"] or 0,
-                            "reasoning_tasks": row["reasoning_tasks"] or 0,
-                            "inference_calls": row["inference_calls"] or 0,
-                            "findings": row["findings"] or 0,
-                            "dropped": row["dropped"] or 0,
-                        }
-                    return defaults
-                finally:
-                    await conn.close()
-
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(_load())
-            loop.close()
-            if result["raw_signals"] > 0:
-                logging.getLogger(__name__).info(
-                    "Seeded totals from DB: raw=%d, findings=%d, inferences=%d",
-                    result["raw_signals"], result["findings"], result["inference_calls"],
-                )
-            return result
-        except Exception:
+        import os, threading
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
             return defaults
+
+        result_box = [defaults]
+
+        def _sync_load():
+            try:
+                import asyncio, asyncpg
+                async def _do():
+                    conn = await asyncpg.connect(db_url)
+                    try:
+                        row = await conn.fetchrow(
+                            "SELECT raw_signals, reasoning_tasks, inference_calls, findings, dropped "
+                            "FROM session_snapshots ORDER BY captured_at DESC LIMIT 1"
+                        )
+                        if row:
+                            return {
+                                "raw_signals": row["raw_signals"] or 0,
+                                "reasoning_tasks": row["reasoning_tasks"] or 0,
+                                "inference_calls": row["inference_calls"] or 0,
+                                "findings": row["findings"] or 0,
+                                "dropped": row["dropped"] or 0,
+                                "retained": 0,
+                            }
+                        return defaults
+                    finally:
+                        await conn.close()
+                loop = asyncio.new_event_loop()
+                result_box[0] = loop.run_until_complete(_do())
+                loop.close()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_sync_load)
+        t.start()
+        t.join(timeout=10)
+
+        if result_box[0]["raw_signals"] > 0:
+            logging.getLogger(__name__).info(
+                "Seeded totals from DB: raw=%d, findings=%d, inferences=%d",
+                result_box[0]["raw_signals"], result_box[0]["findings"], result_box[0]["inference_calls"],
+            )
+        return result_box[0]
 
     def update_params(self, **kwargs):
         for k, v in kwargs.items():
