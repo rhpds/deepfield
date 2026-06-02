@@ -41,12 +41,12 @@ class KafkaWorker:
         self._errors = 0
         self._started_at: Optional[float] = None
 
-    def _create_consumer(self):
+    def _create_consumer(self, group_id_override: str = None):
         from kafka import KafkaConsumer
         return KafkaConsumer(
             self.topic,
             bootstrap_servers=_get_bootstrap(),
-            group_id=self.group_id,
+            group_id=group_id_override or self.group_id,
             auto_offset_reset=self.auto_offset_reset,
             enable_auto_commit=True,
             auto_commit_interval_ms=5000,
@@ -55,6 +55,22 @@ class KafkaWorker:
             max_poll_interval_ms=300000,
             session_timeout_ms=30000,
         )
+
+    def seek_to_beginning(self):
+        if self._consumer:
+            self._consumer.poll(timeout_ms=0)
+            self._consumer.seek_to_beginning()
+
+    def seek_to_timestamp(self, timestamp_ms: int):
+        if self._consumer:
+            self._consumer.poll(timeout_ms=0)
+            partitions = self._consumer.assignment()
+            offsets = self._consumer.offsets_for_times(
+                {tp: timestamp_ms for tp in partitions}
+            )
+            for tp, offset_and_ts in (offsets or {}).items():
+                if offset_and_ts is not None:
+                    self._consumer.seek(tp, offset_and_ts.offset)
 
     def process(self, message: dict) -> None:
         raise NotImplementedError

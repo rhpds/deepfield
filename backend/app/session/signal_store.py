@@ -271,3 +271,45 @@ class SignalStore:
 
     def get_recent_inferences(self, limit: int = 30) -> list:
         return list(self.recent_inferences)[-limit:]
+
+
+class ReplayStore(SignalStore):
+    """Signal store for replay sessions — in-memory only, no DB persistence."""
+
+    def __init__(self, replay_id: str, **kwargs):
+        self.replay_id = replay_id
+        super().__init__(**kwargs)
+
+    def _load_historical_stats(self):
+        pass
+
+    def add_signal(self, signal_dict: dict):
+        signal_dict["_ts"] = datetime.now(timezone.utc).isoformat()
+        signal_dict["_replay_id"] = self.replay_id
+        self.recent_signals.append(signal_dict)
+
+    def add_decision(self, decision_dict: dict):
+        decision_dict["_ts"] = datetime.now(timezone.utc).isoformat()
+        self.recent_decisions.append(decision_dict)
+        agent = decision_dict.get("filter_name", "unknown")
+        if agent not in self.agent_stats:
+            self.agent_stats[agent] = AgentStats()
+        stats = self.agent_stats[agent]
+        stats.total_evaluated += 1
+        outcome = decision_dict.get("outcome", "")
+        if outcome == "escalate":
+            stats.escalated += 1
+        elif outcome == "keep":
+            stats.kept += 1
+        elif outcome == "suppress":
+            stats.suppressed += 1
+        elif outcome == "dedupe":
+            stats.deduped += 1
+
+    def add_finding(self, finding_dict: dict):
+        finding_dict["_ts"] = datetime.now(timezone.utc).isoformat()
+        self.recent_findings.append(finding_dict)
+
+    def add_inference(self, inference_dict: dict):
+        inference_dict["_ts"] = datetime.now(timezone.utc).isoformat()
+        self.recent_inferences.append(inference_dict)

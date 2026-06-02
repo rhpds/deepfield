@@ -25,9 +25,18 @@ class TestAuthModule:
             with pytest.raises(HTTPException):
                 require_api_key(request=MagicMock(headers={}), api_key="wrong")
 
-    def test_same_origin_bypasses(self):
+    def test_oauth_proxy_header_allows_access(self):
         from app.auth import require_api_key
         with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
             req = MagicMock()
-            req.headers = {"sec-fetch-site": "same-origin"}
+            req.headers = {"X-Forwarded-User": "jkershaw@redhat.com"}
             require_api_key(request=req, api_key="")
+
+    def test_spoofable_headers_rejected(self):
+        from app.auth import require_api_key
+        from fastapi import HTTPException
+        with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
+            req = MagicMock()
+            req.headers = {"sec-fetch-site": "same-origin", "origin": "https://deepfield.example.com"}
+            with pytest.raises(HTTPException):
+                require_api_key(request=req, api_key="")
