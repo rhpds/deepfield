@@ -6,6 +6,10 @@ import importlib
 from app.domain.models import FilterDecision, NormalizedSignal
 
 AGENT_MODULES = [
+    # Stage 1: Filter duplicates and noise FIRST
+    "app.nanoagents.dedupe",
+    "app.nanoagents.transient_suppressor",
+    # Stage 2: Classify surviving signals
     "app.nanoagents.failure_classifier",
     "app.nanoagents.event_classifier",
     "app.nanoagents.pod_health",
@@ -17,8 +21,6 @@ AGENT_MODULES = [
     "app.nanoagents.kafka_lag",
     "app.nanoagents.launchpad_session",
     "app.nanoagents.stargate_evaluation",
-    "app.nanoagents.transient_suppressor",
-    "app.nanoagents.dedupe",
 ]
 
 
@@ -26,15 +28,16 @@ def run_pipeline(signals: List[NormalizedSignal], cluster_profile=None) -> dict:
     all_decisions: List[FilterDecision] = []
     suppressed_ids: set = set()
     deduped_ids: set = set()
+    active_signals = list(signals)
 
     for module_path in AGENT_MODULES:
         module = importlib.import_module(module_path)
         if cluster_profile and module_path in (
             "app.nanoagents.dedupe", "app.nanoagents.transient_suppressor"
         ):
-            decisions = module.filter(signals, cluster_profile=cluster_profile)
+            decisions = module.filter(active_signals, cluster_profile=cluster_profile)
         else:
-            decisions = module.filter(signals)
+            decisions = module.filter(active_signals)
         all_decisions.extend(decisions)
 
         for d in decisions:
@@ -42,6 +45,9 @@ def run_pipeline(signals: List[NormalizedSignal], cluster_profile=None) -> dict:
                 suppressed_ids.add(d.signal_id)
             elif d.outcome == "dedupe":
                 deduped_ids.add(d.signal_id)
+
+        dropped_ids = suppressed_ids | deduped_ids
+        active_signals = [s for s in active_signals if s.signal_id not in dropped_ids]
 
     decided_ids = {d.signal_id for d in all_decisions}
     escalated = [d for d in all_decisions if d.outcome == "escalate"]
