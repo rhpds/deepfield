@@ -100,7 +100,9 @@ if STATIC_DIR.exists():
 
     @app.get("/{path:path}")
     async def serve_spa(path: str):
-        file_path = STATIC_DIR / path
+        file_path = (STATIC_DIR / path).resolve()
+        if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+            return FileResponse(STATIC_DIR / "index.html")
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(STATIC_DIR / "index.html")

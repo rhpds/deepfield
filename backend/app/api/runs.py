@@ -179,8 +179,10 @@ async def start_capacity_run(req: CapacityRequest):
             _capacity_runs[run_id]["status"] = "done"
             _capacity_runs[run_id]["phase"] = "done"
         except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Capacity run %s failed: %s", run_id, e)
             _capacity_runs[run_id]["status"] = "error"
-            _capacity_runs[run_id]["error"] = str(e)
+            _capacity_runs[run_id]["error"] = "Capacity run failed"
 
     threading.Thread(target=_worker, daemon=True).start()
     return {"run_id": run_id, "status": "started"}

@@ -17,6 +17,10 @@ def load_prompt(name: str) -> Dict:
         return _prompt_cache[name]
     try:
         import yaml
+        import re
+        if not re.match(r'^[a-z_][a-z0-9_]*$', name):
+            logger.warning("Invalid prompt name rejected: %s", name)
+            return {}
         path = os.path.join(PROMPTS_DIR, f"{name}.yaml")
         if not os.path.exists(path):
             logger.warning(f"Prompt file not found: {path}")

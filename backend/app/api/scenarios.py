@@ -3,9 +3,12 @@
 import os
 import threading
 import asyncio
+import logging
 from fastapi import APIRouter, Depends
 
 from app.auth import require_write_access
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/scenarios", tags=["scenarios"])
 
@@ -49,7 +52,8 @@ async def run_scenario(body: dict):
             result = loop.run_until_complete(runner.run_scenario(scenario_id))
             _results[scenario_id] = result
         except Exception as e:
-            _results[scenario_id] = {"scenario_id": scenario_id, "status": "error", "error": str(e)}
+            logger.warning("Scenario %s failed: %s", scenario_id, e)
+            _results[scenario_id] = {"scenario_id": scenario_id, "status": "error", "error": "Scenario execution failed"}
         finally:
             loop.close()
             _running[scenario_id] = False
@@ -92,7 +96,8 @@ async def run_all():
                 result = loop.run_until_complete(runner.run_scenario(sid))
                 _results[sid] = result
             except Exception as e:
-                _results[sid] = {"scenario_id": sid, "status": "error", "error": str(e)}
+                logger.warning("Scenario %s failed: %s", sid, e)
+                _results[sid] = {"scenario_id": sid, "status": "error", "error": "Scenario execution failed"}
             _running[sid] = False
         loop.close()
 

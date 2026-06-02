@@ -4,11 +4,14 @@ Only executes pre-approved command types against the cluster.
 All commands are validated against an allowlist before execution.
 """
 
+import logging
 import os
 import re
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.auth import require_write_access
 from typing import Optional
@@ -133,7 +136,7 @@ async def execute_command(req: ExecuteRequest):
                 return {"status": "ok", "command": req.command, "output": f"Deployment {req.resource_name} rollout restarted (status {resp.status_code})"}
 
             elif req.command == "scale":
-                replicas = (req.args or {}).get("replicas", 1)
+                replicas = max(0, min(int((req.args or {}).get("replicas", 1)), 50))
                 path = f"/apis/apps/v1/namespaces/{req.namespace}/deployments/{req.resource_name}/scale"
                 resp = client.get(f"{api_url}{path}", headers=headers)
                 if resp.status_code != 200:
@@ -144,7 +147,8 @@ async def execute_command(req: ExecuteRequest):
                 return {"status": "ok", "command": req.command, "output": f"Scaled {req.resource_name} to {replicas} replicas (status {resp.status_code})"}
 
     except Exception as e:
-        result = {"status": "error", "command": req.command, "output": str(e)[:500]}
+        logger.warning("Remediation %s failed: %s", req.command, e)
+        result = {"status": "error", "command": req.command, "output": "Command execution failed"}
         _persist_remediation(req, result)
         return result
 
