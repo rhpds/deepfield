@@ -498,11 +498,12 @@ class StreamingSession:
                         new_findings.append(f)
                         self._finding_cooldown[key] = now_ts
 
+                        cluster_names = list(self.store.cluster_stats.keys()) or ["infra01"]
                         finding_dict = {
                             "finding_type": f.finding_type, "severity": f.severity,
                             "summary": f.summary, "namespaces": f.namespaces,
                             "signal_count": len(f.signal_ids),
-                            "clusters": [str(c)[:8] for c in f.clusters],
+                            "clusters": cluster_names,
                         }
                         self.store.add_finding(finding_dict)
                         self._log_event("correlation", "finding", {
@@ -658,6 +659,9 @@ class StreamingSession:
                 ns = nsl[0] if isinstance(nsl, list) and nsl else ""
             cluster_list = task.context.get("clusters", [])
             cluster = cluster_list[0] if cluster_list else "infra01"
+            if len(cluster) <= 8:
+                known = list(self.store.cluster_stats.keys())
+                cluster = known[0] if known else "infra01"
             if not ns:
                 return
 
