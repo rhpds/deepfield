@@ -14,6 +14,15 @@ from app.nanoagents import dedupe, transient_suppressor
 _CLUSTER = UUID("00000000-0000-0000-0000-000000000001")
 
 
+@pytest.fixture(autouse=True)
+def _reset_agent_state():
+    dedupe.reset_state()
+    transient_suppressor.reset_state()
+    yield
+    dedupe.reset_state()
+    transient_suppressor.reset_state()
+
+
 def _sig(signal_type: str, namespace: str = "test-ns", resource_name: str = "pod-1",
          severity: str = "medium", ts_offset: float = 0) -> NormalizedSignal:
     return NormalizedSignal(

@@ -1,5 +1,6 @@
 """Tests for adaptive nano-agent behavior with cluster profiles."""
 
+import pytest
 from datetime import datetime, timezone
 from uuid import uuid4, UUID
 
@@ -8,6 +9,15 @@ from app.session.cluster_profile import ClusterProfile
 from app.nanoagents import dedupe, transient_suppressor
 
 _FIXED_CLUSTER = UUID("00000000-0000-0000-0000-000000000001")
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_state():
+    dedupe.reset_state()
+    transient_suppressor.reset_state()
+    yield
+    dedupe.reset_state()
+    transient_suppressor.reset_state()
 
 
 def _make_signal(signal_type: str, namespace: str = "test-ns", cluster: str = "infra01",
