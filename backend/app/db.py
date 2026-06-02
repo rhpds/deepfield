@@ -94,8 +94,18 @@ async def execute(sql: str, *args):
         logger.warning("DB execute failed: %s", str(e)[:200])
 
 
+_ALLOWED_TABLES = frozenset({
+    "signals", "decisions", "findings", "inferences", "remediations",
+    "agent_stats_snapshots", "session_snapshots", "metrics_snapshots",
+    "cluster_profiles",
+})
+
+
 def enqueue_write(table: str, data: dict):
     """Non-blocking write — enqueues for background batch insert."""
+    if table not in _ALLOWED_TABLES:
+        logger.warning("Rejected write to unknown table: %s", table)
+        return
     qlen = len(_write_queue)
     if qlen > 40000:
         logger.warning("Write queue near capacity: %d/50000", qlen)
@@ -165,9 +175,17 @@ def _flush_batch_sync(batch: list, db_url: str):
                 for table, data in batch:
                     by_table.setdefault(table, []).append(data)
 
+                import re
+                _COL_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
+
                 for table, rows in by_table.items():
+                    if table not in _ALLOWED_TABLES:
+                        continue
                     for row in rows:
                         cols = list(row.keys())
+                        if not all(_COL_RE.match(c) for c in cols):
+                            logger.warning("Rejected row with invalid column names: %s", cols)
+                            continue
                         vals = [_coerce_value(c, row[c]) for c in cols]
                         placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
                         col_names = ", ".join(cols)

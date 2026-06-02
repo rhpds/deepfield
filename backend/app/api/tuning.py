@@ -3,8 +3,10 @@
 import time
 import threading
 import logging
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from typing import Optional
+
+from app.auth import require_write_access
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/tuning", tags=["tuning"])
@@ -31,7 +33,7 @@ async def get_proposals(cluster_id: Optional[str] = None, status: str = "pending
     return {"proposals": rows, "count": len(rows)}
 
 
-@router.post("/proposals/{proposal_id}/approve")
+@router.post("/proposals/{proposal_id}/approve", dependencies=[Depends(require_write_access)])
 async def approve_proposal(proposal_id: str):
     """Approve a tuning proposal — applies it to the cluster profile."""
     from app import db
@@ -42,7 +44,7 @@ async def approve_proposal(proposal_id: str):
     return {"status": "approved", "proposal_id": proposal_id}
 
 
-@router.post("/proposals/{proposal_id}/reject")
+@router.post("/proposals/{proposal_id}/reject", dependencies=[Depends(require_write_access)])
 async def reject_proposal(proposal_id: str):
     """Reject a tuning proposal."""
     from app import db

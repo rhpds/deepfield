@@ -7,8 +7,10 @@ All commands are validated against an allowlist before execution.
 import os
 import re
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from app.auth import require_write_access
 from typing import Optional
 
 router = APIRouter(prefix="/api/v1/remediation", tags=["remediation"])
@@ -55,7 +57,7 @@ async def list_commands():
     return {"allowed_commands": ALLOWED_COMMANDS}
 
 
-@router.post("/execute")
+@router.post("/execute", dependencies=[Depends(require_write_access)])
 async def execute_command(req: ExecuteRequest):
     if req.command not in ALLOWED_COMMANDS:
         return {"status": "error", "command": req.command, "output": f"Command '{req.command}' not allowed. Allowed: {list(ALLOWED_COMMANDS.keys())}"}

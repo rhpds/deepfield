@@ -4,8 +4,10 @@ import threading
 import time
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
+from app.auth import require_write_access
 
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
 
@@ -76,7 +78,7 @@ class DemoStartRequest(BaseModel):
     seed: int = 42
 
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(require_write_access)])
 async def start_demo(req: DemoStartRequest):
     global _demo_thread
     _demo_stop.clear()
@@ -166,7 +168,7 @@ async def start_demo(req: DemoStartRequest):
     return {"status": "started", "steps": len(DEMO_STEPS)}
 
 
-@router.post("/stop")
+@router.post("/stop", dependencies=[Depends(require_write_access)])
 async def stop_demo():
     _demo_stop.set()
     # Also stop any running session

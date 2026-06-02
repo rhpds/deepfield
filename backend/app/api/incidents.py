@@ -1,7 +1,9 @@
 """Incidents API — rich evidence-driven incidents with append semantics."""
 
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+
+from app.auth import require_write_access
 
 router = APIRouter(prefix="/api/v1/incidents", tags=["incidents"])
 
@@ -43,13 +45,13 @@ async def get_incident(incident_id: str):
     return inc
 
 
-@router.post("/{incident_id}/resolve")
+@router.post("/{incident_id}/resolve", dependencies=[Depends(require_write_access)])
 async def resolve_incident(incident_id: str):
     mgr = _get_manager()
     return mgr.resolve_incident(incident_id)
 
 
-@router.post("/{incident_id}/suppress")
+@router.post("/{incident_id}/suppress", dependencies=[Depends(require_write_access)])
 async def suppress_incident(incident_id: str):
     mgr = _get_manager()
     inc = mgr.get_incident(incident_id)

@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+
+from app.auth import require_write_access
 
 from app.domain.models import RawSignal
 from app.generators.signal_types import SIGNAL_RESOURCE_KIND
@@ -106,7 +108,7 @@ def _convert_stargate_event(event: IntegrationEvent) -> RawSignal | None:
     )
 
 
-@router.post("/events")
+@router.post("/events", dependencies=[Depends(require_write_access)])
 async def receive_event(event: IntegrationEvent, request: Request):
     """Receive integration events from Launchpad or StarGate."""
     _verify_api_key(request)

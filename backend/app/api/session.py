@@ -1,9 +1,11 @@
 """Session API — separate live monitoring (auto-start) and synthetic (push-button)."""
 
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+
+from app.auth import require_write_access
 
 from app.session.synthetic_session import create_synthetic_session, get_synthetic_session
 from app.session.streaming_session import create_streaming_session, get_streaming_session
@@ -102,7 +104,7 @@ class UpdateParamsRequest(BaseModel):
     models_enabled: Optional[dict] = None
 
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(require_write_access)])
 async def start_session(req: StartSessionRequest):
     """Start a synthetic session (Demo / Simulator). Live monitoring is always running."""
     global _synthetic_session_id
@@ -141,7 +143,7 @@ async def start_session(req: StartSessionRequest):
     return {"session_id": session.session_id, "status": "started", "target_namespaces": req.target_namespaces}
 
 
-@router.post("/signals/inject")
+@router.post("/signals/inject", dependencies=[Depends(require_write_access)])
 async def inject_signal(body: dict):
     """Inject a signal directly into the live session's processing pipeline.
 
@@ -172,7 +174,7 @@ async def inject_signal(body: dict):
     return {"injected": True, "queue_depth": len(session._signal_queue)}
 
 
-@router.post("/update")
+@router.post("/update", dependencies=[Depends(require_write_access)])
 async def update_params(req: UpdateParamsRequest):
     session = _get_synthetic()
     if not session:
@@ -182,7 +184,7 @@ async def update_params(req: UpdateParamsRequest):
     return {"status": "updated", "params": session.params.__dict__}
 
 
-@router.post("/stop")
+@router.post("/stop", dependencies=[Depends(require_write_access)])
 async def stop_session():
     """Stop the synthetic session. Live monitoring keeps running."""
     global _synthetic_session_id
@@ -218,7 +220,7 @@ async def stop_session():
     return {"status": "stopped", "receipt": receipt}
 
 
-@router.post("/reset")
+@router.post("/reset", dependencies=[Depends(require_write_access)])
 async def reset_session():
     """Reset synthetic session and clear state. Live monitoring unaffected."""
     global _synthetic_session_id

@@ -1,8 +1,10 @@
 """DeepField run API endpoints."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+
+from app.auth import require_write_access
 
 from app.orchestrator import run_synthetic, run_benchmark, run_capacity_projection
 from app.inference.client import MockInferenceClient
@@ -15,14 +17,14 @@ _benchmarks: dict = {}
 _prometheus = None
 
 
-@router.post("/preflight")
+@router.post("/preflight", dependencies=[Depends(require_write_access)])
 async def preflight_check():
     import asyncio
     from app.benchmark.preflight import run_preflight
     return await asyncio.get_event_loop().run_in_executor(None, run_preflight)
 
 
-@router.post("/warmup")
+@router.post("/warmup", dependencies=[Depends(require_write_access)])
 async def warmup():
     import asyncio
     from app.benchmark.preflight import run_warmup
@@ -67,7 +69,7 @@ class CapacityRequest(BaseModel):
     mode: str = "mock"
 
 
-@router.post("/runs/synthetic")
+@router.post("/runs/synthetic", dependencies=[Depends(require_write_access)])
 async def start_synthetic_run(req: SyntheticRunRequest):
     import asyncio
     client = _get_client(req.mode, req.seed)
@@ -78,7 +80,7 @@ async def start_synthetic_run(req: SyntheticRunRequest):
     return result
 
 
-@router.post("/runs/benchmark")
+@router.post("/runs/benchmark", dependencies=[Depends(require_write_access)])
 async def start_benchmark_run(req: BenchmarkRunRequest):
     client = _get_client(req.mode, req.seed)
     if req.background or req.mode == "real":
@@ -120,7 +122,7 @@ async def get_active_benchmarks():
 _capacity_runs: dict = {}
 
 
-@router.post("/runs/capacity")
+@router.post("/runs/capacity", dependencies=[Depends(require_write_access)])
 async def start_capacity_run(req: CapacityRequest):
     import threading
     from uuid import uuid4

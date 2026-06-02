@@ -3,7 +3,9 @@
 import os
 import threading
 import asyncio
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.auth import require_write_access
 
 router = APIRouter(prefix="/api/v1/scenarios", tags=["scenarios"])
 
@@ -24,7 +26,7 @@ async def list_scenarios():
     }
 
 
-@router.post("/run")
+@router.post("/run", dependencies=[Depends(require_write_access)])
 async def run_scenario(body: dict):
     """Start a scenario in the background — returns immediately. Poll /results for status."""
     scenario_id = body.get("scenario_id", "")
@@ -67,7 +69,7 @@ async def get_result(scenario_id: str):
     return _results.get(scenario_id, {"status": "not_run"})
 
 
-@router.post("/run-all")
+@router.post("/run-all", dependencies=[Depends(require_write_access)])
 async def run_all():
     """Run all scenarios sequentially in background. Poll /results for status."""
     from app.testing.scenario_runner import SCENARIOS
