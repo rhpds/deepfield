@@ -75,6 +75,37 @@ def publish_to_kafka(topic: str, payload: dict, key: str = None) -> Optional[dic
         return {}
 
 
+PIPELINE_TOPICS = {
+    "raw": "deepfield-raw-signals",
+    "filtered": "deepfield-filtered-signals",
+    "findings": "deepfield-findings",
+    "incidents": "deepfield-incidents",
+}
+
+
+def publish_raw_signal(signal_dict: dict) -> None:
+    """Publish a raw signal to the pipeline topic. Key by namespace for partition ordering."""
+    ns = signal_dict.get("namespace", "unknown")
+    publish_to_kafka(PIPELINE_TOPICS["raw"], signal_dict, key=ns)
+
+
+def publish_filtered_signal(signal_dict: dict) -> None:
+    """Publish a kept/escalated signal after nano-agent processing."""
+    ns = signal_dict.get("namespace", "unknown")
+    publish_to_kafka(PIPELINE_TOPICS["filtered"], signal_dict, key=ns)
+
+
+def publish_finding(finding_dict: dict) -> None:
+    """Publish a correlated finding."""
+    ns = finding_dict.get("namespaces", ["unknown"])[0] if finding_dict.get("namespaces") else "unknown"
+    publish_to_kafka(PIPELINE_TOPICS["findings"], finding_dict, key=ns)
+
+
+def publish_incident_event(incident_dict: dict) -> None:
+    """Publish incident state change."""
+    publish_to_kafka(PIPELINE_TOPICS["incidents"], incident_dict, key=incident_dict.get("id", ""))
+
+
 def publish_event(event_type: str, payload: dict) -> None:
     payload["_kafka_topic"] = get_topic_for_event(event_type)
     payload["_published_at"] = datetime.now(timezone.utc).isoformat()

@@ -427,6 +427,18 @@ class StreamingSession:
                 except Exception as e:
                     logger.error("route_signals crashed: %s", e, exc_info=True)
 
+            # Phase 1 Kafka dual-write: publish kept/escalated signals
+            try:
+                from app.integrations.kafka_publisher import publish_filtered_signal
+                for s in kept:
+                    publish_filtered_signal({
+                        "signal_type": s.signal_type, "namespace": s.namespace,
+                        "resource_kind": s.resource_kind, "resource_name": s.resource_name,
+                        "severity": s.severity, "source": getattr(s, "source", ""),
+                    })
+            except Exception:
+                pass
+
             _phase = "correlate"
             # ------ Correlate (isolated) — accumulate across batches ------
             for s in kept:
@@ -444,17 +456,24 @@ class StreamingSession:
 
             try:
                 for f in findings:
-                    self.store.add_finding({
+                    finding_dict = {
                         "finding_type": f.finding_type, "severity": f.severity,
                         "summary": f.summary, "namespaces": f.namespaces,
                         "signal_count": len(f.signal_ids),
                         "clusters": [str(c)[:8] for c in f.clusters],
-                    })
+                    }
+                    self.store.add_finding(finding_dict)
                     self._log_event("correlation", "finding", {
                         "type": f.finding_type, "severity": f.severity,
                         "summary": f.summary, "signals": len(f.signal_ids),
                         "namespaces": f.namespaces[:3],
                     })
+                    # Phase 1 Kafka dual-write: publish findings
+                    try:
+                        from app.integrations.kafka_publisher import publish_finding
+                        publish_finding(finding_dict)
+                    except Exception:
+                        pass
 
                 now_ts = time.monotonic()
                 for f in findings:
@@ -609,11 +628,9 @@ class StreamingSession:
                 return
 
             if task.task_type == "root_cause_analysis":
-                # RCA creates the incident with all correlated signals
                 all_signals = task.context.get("signals", [])
                 signal_count = task.context.get("signal_count", len(all_signals))
 
-                # Create incident with the first signal
                 inc = mgr.process_signal(
                     namespace=ns, cluster_id=cluster,
                     signal_type=task.context.get("finding_type", "namespace_correlation"),
@@ -711,6 +728,24 @@ class StreamingSession:
                 # Micro: enrich existing incident with explanation
                 mgr.add_inference(namespace=ns, cluster_id=cluster,
                                   task_type="explain_signal", model=model, output=output)
+
+            # Phase 1 Kafka dual-write: publish incident state change
+            try:
+                from app.integrations.kafka_publisher import publish_incident_event
+                inc_state = mgr._find_open(ns, cluster)
+                if inc_state:
+                    publish_incident_event({
+                        "id": inc_state.get("id", ""),
+                        "namespace": ns,
+                        "cluster_id": cluster,
+                        "status": inc_state.get("status", "open"),
+                        "severity": inc_state.get("severity", ""),
+                        "task_type": task.task_type,
+                        "model": model,
+                        "signal_count": inc_state.get("signal_count", 0),
+                    })
+            except Exception:
+                pass
 
         except Exception as e:
             logger.debug("Incident feed error: %s", e)

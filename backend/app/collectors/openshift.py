@@ -69,6 +69,25 @@ class OpenShiftCollector:
             timestamp=datetime.now(timezone.utc),
         )
 
+    def _buffer_signal(self, signal: RawSignal):
+        """Buffer signal locally AND publish to Kafka (Phase 1 dual-write)."""
+        self._signal_buffer.append(signal)
+        try:
+            from app.integrations.kafka_publisher import publish_raw_signal
+            publish_raw_signal({
+                "signal_id": str(signal.signal_id),
+                "cluster_id": str(signal.cluster_id),
+                "namespace": signal.namespace,
+                "resource_kind": signal.resource_kind,
+                "resource_name": signal.resource_name,
+                "source": signal.source,
+                "signal_type": signal.signal_type,
+                "raw_payload": signal.raw_payload,
+                "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
+            })
+        except Exception:
+            pass
+
     def start_watching(self):
         """Start watch threads for each resource type."""
         self._stop.clear()
@@ -233,14 +252,14 @@ class OpenShiftCollector:
                 reason = waiting.get("reason", "")
                 if restarts > 3 or reason == "CrashLoopBackOff":
                     detail = self._container_detail(cs)
-                    self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_crashloop",
+                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
                         {"restartCount": restarts, "reason": "CrashLoopBackOff", **detail, **pod_ctx}))
                     return
                 elif reason == "ImagePullBackOff":
-                    self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
+                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
                         {"reason": reason, "image": cs.get("image", ""), **pod_ctx}))
                     return
-            self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_running", {}))
+            self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_running", {}))
         elif phase == "Pending":
             conditions = status.get("conditions", [])
             sched = next((c for c in conditions if c.get("type") == "PodScheduled" and c.get("status") == "False"), None)
@@ -248,21 +267,21 @@ class OpenShiftCollector:
             if sched:
                 payload["schedule_reason"] = sched.get("reason", "")
                 payload["schedule_message"] = sched.get("message", "")[:200]
-            self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_pending", payload))
+            self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_pending", payload))
         elif phase == "Failed":
-            self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_crashloop",
+            self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
                 {"phase": phase, "reason": status.get("reason", ""), "message": status.get("message", "")[:200], **pod_ctx}))
         else:
             for cs in status.get("containerStatuses", []) + status.get("initContainerStatuses", []):
                 waiting = cs.get("state", {}).get("waiting", {})
                 reason = waiting.get("reason", "")
                 if reason == "ImagePullBackOff":
-                    self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
+                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
                         {"reason": reason, "image": cs.get("image", ""), **pod_ctx}))
                     return
                 elif reason in ("CrashLoopBackOff", "Error", "CreateContainerError"):
                     detail = self._container_detail(cs)
-                    self._signal_buffer.append(self._make_signal(ns, "Pod", name, "pod_crashloop",
+                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
                         {"reason": reason, **detail, **pod_ctx}))
                     return
 
@@ -271,13 +290,13 @@ class OpenShiftCollector:
         conditions = {c["type"]: c for c in item.get("status", {}).get("conditions", [])}
         ready = conditions.get("Ready", {})
         if ready.get("status") == "True":
-            self._signal_buffer.append(self._make_signal("", "Node", name, "node_ready", {}))
+            self._buffer_signal(self._make_signal("", "Node", name, "node_ready", {}))
         else:
-            self._signal_buffer.append(self._make_signal("", "Node", name, "node_pressure", {"condition": "NotReady"}))
+            self._buffer_signal(self._make_signal("", "Node", name, "node_pressure", {"condition": "NotReady"}))
         for ptype in ("MemoryPressure", "DiskPressure", "PIDPressure"):
             cond = conditions.get(ptype, {})
             if cond.get("status") == "True":
-                self._signal_buffer.append(self._make_signal("", "Node", name, "node_pressure", {"condition": ptype}))
+                self._buffer_signal(self._make_signal("", "Node", name, "node_pressure", {"condition": ptype}))
 
     def _process_event(self, item: dict):
         ns = item.get("metadata", {}).get("namespace", "")
@@ -291,5 +310,5 @@ class OpenShiftCollector:
         signal_type = f"event_{reason.lower()}" if reason else "event_unknown"
         if "e2e" in ns:
             logger.warning("E2E EVENT: ns=%s kind=%s name=%s reason=%s type=%s", ns, kind, name, reason, signal_type)
-        self._signal_buffer.append(self._make_signal(ns, kind, name, signal_type,
+        self._buffer_signal(self._make_signal(ns, kind, name, signal_type,
             {"reason": reason, "message": message, "count": item.get("count", 1)}))
