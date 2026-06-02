@@ -94,14 +94,8 @@ class StreamingSession:
             "signals_per_second": 0,
         }
 
-        # Cumulative totals
-        self.totals = {
-            "raw_signals": 0,
-            "reasoning_tasks": 0,
-            "inference_calls": 0,
-            "findings": 0,
-            "dropped": 0,
-        }
+        # Cumulative totals — seeded from DB on startup
+        self.totals = self._load_totals_from_db()
 
         # EMA smoothing (alpha = 0.2 means 80% previous + 20% new)
         self._ema_alpha = 0.2
@@ -180,6 +174,47 @@ class StreamingSession:
             self._prom = PrometheusPoller()
         except Exception:
             pass
+
+    @staticmethod
+    def _load_totals_from_db() -> dict:
+        """Seed cumulative totals from DB so dashboard isn't empty after restart."""
+        defaults = {"raw_signals": 0, "reasoning_tasks": 0, "inference_calls": 0, "findings": 0, "dropped": 0}
+        try:
+            import os, asyncio, asyncpg
+            db_url = os.getenv("DATABASE_URL", "")
+            if not db_url:
+                return defaults
+
+            async def _load():
+                conn = await asyncpg.connect(db_url)
+                try:
+                    row = await conn.fetchrow(
+                        "SELECT raw_signals, reasoning_tasks, inference_calls, findings, dropped "
+                        "FROM session_snapshots ORDER BY captured_at DESC LIMIT 1"
+                    )
+                    if row:
+                        return {
+                            "raw_signals": row["raw_signals"] or 0,
+                            "reasoning_tasks": row["reasoning_tasks"] or 0,
+                            "inference_calls": row["inference_calls"] or 0,
+                            "findings": row["findings"] or 0,
+                            "dropped": row["dropped"] or 0,
+                        }
+                    return defaults
+                finally:
+                    await conn.close()
+
+            loop = asyncio.new_event_loop()
+            result = loop.run_until_complete(_load())
+            loop.close()
+            if result["raw_signals"] > 0:
+                logging.getLogger(__name__).info(
+                    "Seeded totals from DB: raw=%d, findings=%d, inferences=%d",
+                    result["raw_signals"], result["findings"], result["inference_calls"],
+                )
+            return result
+        except Exception:
+            return defaults
 
     def update_params(self, **kwargs):
         for k, v in kwargs.items():
@@ -507,7 +542,7 @@ class StreamingSession:
                 elapsed = max(0.1, time.monotonic() - self._window_start)
                 self.metrics["raw_signals"] = self._window_signals
                 self.metrics["dropped"] = self._window_dropped
-                self.metrics["retained"] = self._window_signals - self._window_dropped
+                self.metrics["retained"] = max(0, self._window_signals - self._window_dropped)
                 self.metrics["findings"] = self._window_findings
 
                 raw_sps = self._window_signals / elapsed
