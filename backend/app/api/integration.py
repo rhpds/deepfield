@@ -45,11 +45,77 @@ def _check_duplicate(event_id: str) -> bool:
 
 
 class IntegrationEvent(BaseModel):
-    source: Literal["launchpad", "stargate", "deepfield"]
+    source: Literal["launchpad", "stargate", "deepfield", "splunk"]
     event_type: str
     event_id: str
     timestamp: str
     payload: dict
+
+
+# ---------- Splunk Webhook ----------
+
+@router.post("/splunk")
+async def receive_splunk_webhook(request: Request):
+    """Receive Splunk alert webhook payloads.
+
+    Configure in Splunk: Saved Search → Alert Action → Webhook
+    URL: https://deepfield-deepfield.apps.../integration/splunk
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raw = await request.body()
+        import json as _json
+        try:
+            body = _json.loads(raw)
+        except Exception:
+            raise HTTPException(400, "Invalid JSON payload")
+
+    result = body.get("result", body)
+    search_name = body.get("search_name", body.get("name", "unknown"))
+    sid = body.get("sid", str(uuid4()))
+    app = body.get("app", "search")
+    severity_str = str(result.get("severity", body.get("severity", "3")))
+
+    from app.collectors.splunk import SPLUNK_SEVERITY_MAP
+    signal_type = SPLUNK_SEVERITY_MAP.get(severity_str, "splunk_medium_alert")
+
+    if _check_duplicate(f"splunk:{sid}"):
+        return {"received": True, "duplicate": True}
+
+    try:
+        ts = datetime.fromisoformat(body.get("trigger_time", "").replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        ts = datetime.now(timezone.utc)
+
+    signal = RawSignal(
+        signal_id=uuid4(),
+        cluster_id=uuid4(),
+        namespace=app,
+        resource_kind="SplunkAlert",
+        resource_name=search_name,
+        source="splunk:webhook",
+        signal_type=signal_type,
+        raw_payload={
+            "search_name": search_name,
+            "sid": sid,
+            "app": app,
+            "severity": severity_str,
+            "result": {k: v for k, v in result.items() if k != "_raw"} if isinstance(result, dict) else {},
+            "search_query": str(body.get("search", ""))[:500],
+            "results_link": body.get("results_link", ""),
+        },
+        timestamp=ts,
+    )
+
+    from app.session.streaming_session import get_active_sessions
+    sessions = get_active_sessions()
+    for session in sessions.values():
+        if hasattr(session, "_signal_queue"):
+            session._signal_queue.append(signal)
+
+    logger.info("Splunk webhook: %s (%s) → %s", search_name, signal_type, app)
+    return {"received": True, "signal_type": signal_type, "search_name": search_name}
 
 
 def _convert_launchpad_event(event: IntegrationEvent) -> RawSignal | None:
