@@ -104,7 +104,7 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
         RCA_SYSTEM, TRIAGE_SYSTEM, CORRELATION_SYSTEM,
         CLASSIFY_SIGNAL_SYSTEM, CORRELATE_FINDINGS_SYSTEM,
         SUGGEST_REMEDIATION_SYSTEM, EXPLAIN_SIGNAL_SYSTEM,
-        FILTER_NOISE_SYSTEM,
+        FILTER_NOISE_SYSTEM, get_system_prompt,
     )
 
     tasks = []
@@ -118,10 +118,13 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
         model = _select_model_for_finding(f)
         evidence_block = _build_evidence_block(f)
 
-        # --- Primary task (existing logic) ---
+        # --- Primary task (deep RCA for critical cross-cluster or high-signal findings) ---
         if f.finding_type == "cross_cluster_correlation":
-            task_type = "cross_cluster_correlation"
-            system_prompt = CORRELATION_SYSTEM
+            task_type = "deep_root_cause_analysis"
+            system_prompt = get_system_prompt("deep_rca") or CORRELATION_SYSTEM
+        elif f.severity in ("critical",) and len(f.signal_ids) >= 5:
+            task_type = "deep_root_cause_analysis"
+            system_prompt = get_system_prompt("deep_rca") or RCA_SYSTEM
         elif f.severity in ("critical", "high"):
             task_type = "root_cause_analysis"
             system_prompt = RCA_SYSTEM

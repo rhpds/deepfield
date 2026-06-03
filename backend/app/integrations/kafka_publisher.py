@@ -80,6 +80,7 @@ PIPELINE_TOPICS = {
     "filtered": "deepfield-filtered-signals",
     "findings": "deepfield-findings",
     "incidents": "deepfield-incidents",
+    "tarsy_requested": "tarsy-investigation-requested",
 }
 
 
@@ -104,6 +105,15 @@ def publish_finding(finding_dict: dict) -> None:
 def publish_incident_event(incident_dict: dict) -> None:
     """Publish incident state change."""
     publish_to_kafka(PIPELINE_TOPICS["incidents"], incident_dict, key=incident_dict.get("id", ""))
+
+
+def publish_tarsy_request(request_dict: dict) -> None:
+    """Publish a TARSy investigation request. Key by originator_id for partition ordering."""
+    publish_to_kafka(
+        PIPELINE_TOPICS["tarsy_requested"],
+        request_dict,
+        key=request_dict.get("originator_id", ""),
+    )
 
 
 def publish_event(event_type: str, payload: dict) -> None:

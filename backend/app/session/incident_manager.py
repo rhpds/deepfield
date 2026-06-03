@@ -5,6 +5,7 @@ RCA outputs, and remediation options over time. Same namespace+signal_type
 appends to existing open incident rather than creating duplicates.
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -122,6 +123,11 @@ class IncidentManager:
                     inc["severity"] = severity
                 inc["updated_at"] = datetime.now(timezone.utc).isoformat()
                 self._persist(inc)
+                try:
+                    if self.should_escalate_to_tarsy(inc):
+                        self.escalate_to_tarsy(inc)
+                except Exception:
+                    pass
                 return inc
 
         incident_id = str(uuid4())
@@ -157,7 +163,61 @@ class IncidentManager:
         self._incidents[incident_id] = inc
         self._index[key] = incident_id
         self._persist(inc)
+        try:
+            if self.should_escalate_to_tarsy(inc):
+                self.escalate_to_tarsy(inc)
+        except Exception:
+            pass
         return inc
+
+    def should_escalate_to_tarsy(self, incident: dict) -> bool:
+        """Check if incident should be escalated to TARSy for deep investigation."""
+        if incident["evidence"].get("tarsy_escalated"):
+            return False
+        sev = incident.get("severity", "")
+        if sev not in ("critical", "high"):
+            return False
+        findings = incident["evidence"].get("findings", [])
+        has_cross_cluster = any(
+            f.get("finding_type") == "cross_cluster_correlation" for f in findings
+        )
+        if has_cross_cluster:
+            return True
+        if sev == "critical" and incident.get("signal_count", 0) >= 5:
+            return True
+        return False
+
+    def escalate_to_tarsy(self, incident: dict) -> None:
+        """Build and publish a TARSy investigation request for this incident."""
+        from app.integrations.kafka_publisher import publish_tarsy_request
+
+        evidence_subset = {
+            "signals": incident["evidence"].get("signals", []),
+            "findings": incident["evidence"].get("findings", []),
+            "classifications": incident["evidence"].get("classifications", []),
+        }
+        request = {
+            "alert_type": "DeepFieldEscalation",
+            "severity": incident["severity"],
+            "originator_id": incident["id"],
+            "data": json.dumps(evidence_subset),
+            "mcp_override": {
+                "servers": [{
+                    "name": "kubernetes-server",
+                    "tools": [
+                        "get_pod_logs",
+                        "get_events",
+                        "describe_resource",
+                        "list_resources",
+                    ],
+                }],
+            },
+        }
+        try:
+            publish_tarsy_request(request)
+        except Exception as e:
+            logger.debug("TARSy request publish failed: %s", e)
+        incident["evidence"]["tarsy_escalated"] = True
 
     def _find_open(self, namespace: str, cluster_id: str) -> Optional[dict]:
         key = self._key(namespace, cluster_id)

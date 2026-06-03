@@ -21,6 +21,7 @@ MICRO_MODELS = [
 TASK_TO_TIER = {
     "summarize_finding": "micro",
     "root_cause_analysis": "macro",
+    "deep_root_cause_analysis": "macro",
     "cross_cluster_correlation": "macro",
     "fleet_summary": "macro",
     "capacity_estimate": "macro",

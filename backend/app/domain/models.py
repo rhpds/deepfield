@@ -77,6 +77,7 @@ class ReasoningTask(BaseModel):
     task_type: Literal[
         "summarize_finding",
         "root_cause_analysis",
+        "deep_root_cause_analysis",
         "cross_cluster_correlation",
         "fleet_summary",
         "capacity_estimate",

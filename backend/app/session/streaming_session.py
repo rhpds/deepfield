@@ -785,7 +785,7 @@ class StreamingSession:
             if not ns:
                 return
 
-            if task.task_type in ("root_cause_analysis", "cross_cluster_correlation"):
+            if task.task_type in ("root_cause_analysis", "deep_root_cause_analysis", "cross_cluster_correlation"):
                 all_signals = task.context.get("signals", [])
                 signal_count = task.context.get("signal_count", len(all_signals))
 
@@ -1026,6 +1026,7 @@ class StreamingSession:
 
     _TASK_TO_PROMPT = {
         "root_cause_analysis": "rca",
+        "deep_root_cause_analysis": "deep_rca",
         "summarize_finding": "triage",
         "cross_cluster_correlation": "correlation",
         "fleet_summary": "rca",
@@ -1041,6 +1042,48 @@ class StreamingSession:
     def _do_inference(self, task, model):
         """Execute a single inference call and update metrics."""
         task_type = getattr(task, 'task_type', '')
+
+        # Two-pass deep RCA: runs both macro and micro inference internally
+        if task_type == "deep_root_cause_analysis":
+            try:
+                from app.inference.deep_rca import run_deep_rca
+                from app.domain.models import CandidateFinding
+                # Reconstruct a minimal finding from task context for _build_evidence_block
+                finding = CandidateFinding(
+                    finding_id=task.finding_id,
+                    clusters=[task.finding_id],  # placeholder UUID
+                    namespaces=task.context.get("namespaces", []),
+                    signal_ids=[task.finding_id],  # placeholder
+                    finding_type=task.context.get("finding_type", "namespace_correlation"),
+                    severity=task.context.get("severity", "critical"),
+                    summary="deep RCA finding",
+                    evidence={"signals": task.context.get("signals", [])},
+                )
+                result = run_deep_rca(finding, self.client)
+                if result and not result.get("error"):
+                    import json as _json
+                    output_str = _json.dumps(result)
+                    self._feed_incident(task, model, output_str)
+                    with self._lock:
+                        self.metrics["inference_completed"] += 1
+                        self.metrics["inference_in_flight"] = max(0, self.metrics["inference_in_flight"] - 1)
+                        self.totals["inference_calls"] += 1
+                    self.store.add_inference({
+                        "model": model, "tier": "macro", "task_type": task_type,
+                        "prompt": task.prompt, "output": output_str,
+                        "latency_ms": 0, "tokens_in": 0, "tokens_out": 0,
+                        "severity": task.context.get("severity", ""),
+                        "finding_type": task.context.get("finding_type", ""),
+                    })
+                    self._log_event("macro", "deep_rca_complete", {
+                        "model": model, "task_type": task_type,
+                        "has_review": "review" in result,
+                        "severity": task.context.get("severity", ""),
+                    })
+                    return
+            except Exception as e:
+                logger.warning("Deep RCA failed, falling back to standard: %s", e)
+
         from app.agents.prompts import load_prompt
         prompt_name = self._TASK_TO_PROMPT.get(task_type, "rca")
         prompt_config = load_prompt(prompt_name)
