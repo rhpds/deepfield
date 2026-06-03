@@ -302,6 +302,8 @@ class StreamingSession:
                     name=cfg["name"],
                     base_url=cfg["url"],
                     token=cfg.get("token", ""),
+                    username=cfg.get("username", ""),
+                    password=cfg.get("password", ""),
                     poll_interval=cfg.get("poll_interval", 60),
                     indexes=cfg.get("indexes"),
                 )

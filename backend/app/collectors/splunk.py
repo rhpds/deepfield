@@ -41,12 +41,16 @@ class SplunkCollector:
         name: str,
         base_url: str,
         token: str = "",
+        username: str = "",
+        password: str = "",
         poll_interval: int = 60,
         indexes: Optional[List[str]] = None,
     ):
         self.name = name
         self.base_url = base_url.rstrip("/")
         self.token = token
+        self.username = username
+        self.password = password
         self.poll_interval = poll_interval
         self.indexes = indexes or ["*"]
         self._cluster_id = uuid5(NAMESPACE_DNS, f"deepfield:splunk:{name}")
@@ -59,18 +63,19 @@ class SplunkCollector:
         }
         self._alert_lock = threading.Lock()
 
-    def _headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-        }
+    def _auth_kwargs(self) -> dict:
+        if self.token:
+            return {"headers": {"Authorization": f"Bearer {self.token}"}}
+        if self.username and self.password:
+            return {"auth": (self.username, self.password)}
+        return {}
 
     def _api_get(self, path: str, params: Optional[dict] = None) -> Optional[dict]:
         try:
             with httpx.Client(timeout=30.0, verify=False) as client:
                 resp = client.get(
                     f"{self.base_url}{path}",
-                    headers=self._headers(),
+                    **self._auth_kwargs(),
                     params={**(params or {}), "output_mode": "json"},
                 )
                 if resp.status_code == 200:

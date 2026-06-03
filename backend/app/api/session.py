@@ -55,6 +55,8 @@ def _load_splunk_configs() -> list:
                 "name": name,
                 "url": url,
                 "token": token,
+                "username": os.getenv(f"SPLUNK_{i}_USERNAME", ""),
+                "password": os.getenv(f"SPLUNK_{i}_PASSWORD", ""),
                 "poll_interval": int(os.getenv(f"SPLUNK_{i}_POLL_INTERVAL", "60")),
                 "indexes": os.getenv(f"SPLUNK_{i}_INDEXES", "*").split(","),
             })
