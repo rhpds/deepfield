@@ -118,6 +118,10 @@ class StreamingSession:
         # Finding cooldown — prevent re-inferencing same finding on each rescan
         self._finding_cooldown: dict = {}
         self._finding_cooldown_secs = 60
+        self._finding_cooldown_max = 500
+
+        # Live collectors (set by _emit_live)
+        self._collectors: list = []
 
         # Correlation buffer — accumulates kept signals across batches
         self._correlation_buffer: list = []
@@ -281,6 +285,7 @@ class StreamingSession:
             )
             c.start_watching()
             collectors.append(c)
+        self._collectors = collectors
 
         last_rescan = time.monotonic()
         rescan_interval = self.scan_interval
@@ -294,12 +299,28 @@ class StreamingSession:
             if time.monotonic() - last_rescan >= rescan_interval:
                 for c in collectors:
                     c.rescan()
+                self._sync_infra_counts()
                 last_rescan = time.monotonic()
 
             self._stop.wait(0.5)
 
         for c in collectors:
             c.stop()
+
+    def _sync_infra_counts(self):
+        """Pull current infra counts from collectors and reset cluster stats."""
+        for c in self._collectors:
+            counts = c.get_infra_counts()
+            cs = self.store.cluster_stats.get(c.cluster_name)
+            if cs:
+                cs.pods_running = counts.get("pods_running", 0)
+                cs.pods_pending = counts.get("pods_pending", 0)
+                cs.pods_failed = counts.get("pods_failed", 0)
+                cs.pods_crashloop = counts.get("pods_crashloop", 0)
+                cs.nodes_ready = counts.get("nodes_ready", 0)
+                cs.nodes_pressure = counts.get("nodes_pressure", 0)
+                cs.total_pods = cs.pods_running + cs.pods_pending + cs.pods_crashloop + cs.pods_failed
+                cs.total_nodes = cs.nodes_ready + cs.nodes_pressure
 
     def _emit_synthetic(self):
         """Continuously generates synthetic signals at the configured rate."""
@@ -500,6 +521,9 @@ class StreamingSession:
 
             try:
                 now_ts = time.monotonic()
+                if len(self._finding_cooldown) > self._finding_cooldown_max:
+                    cutoff = now_ts - self._finding_cooldown_secs * 2
+                    self._finding_cooldown = {k: v for k, v in self._finding_cooldown.items() if v > cutoff}
                 for f in findings:
                     key = f"{f.finding_type}:{','.join(sorted(f.namespaces))}"
                     last_seen = self._finding_cooldown.get(key, 0)
@@ -641,6 +665,50 @@ class StreamingSession:
                 total_signals=self.totals["raw_signals"],
                 duration_hours=max(0.01, (time.monotonic() - self._window_start) / 3600),
             )
+
+            # Compute noise scores from recent decisions
+            ns_total: dict = {}
+            ns_suppressed: dict = {}
+            for d in list(self.store.recent_decisions)[-500:]:
+                sig_id = d.get("signal_id", "")
+                outcome = d.get("outcome", "")
+                # Find the namespace from recent signals by signal_id prefix match
+                ns = ""
+                for s in list(self.store.recent_signals)[-500:]:
+                    if s.get("signal_type", "")[:8] == sig_id or s.get("namespace", ""):
+                        ns = s.get("namespace", "")
+                        break
+                if not ns:
+                    ns = d.get("evidence", {}).get("namespace", "") if isinstance(d.get("evidence"), dict) else ""
+                if ns:
+                    ns_total[ns] = ns_total.get(ns, 0) + 1
+                    if outcome in ("suppress", "dedupe", "drop"):
+                        ns_suppressed[ns] = ns_suppressed.get(ns, 0) + 1
+            if not ns_total:
+                # Fallback: approximate from signal counts vs retained
+                retained = self.totals.get("retained", 0)
+                total = self.totals.get("raw_signals", 0)
+                if total > 0:
+                    drop_ratio = 1.0 - (retained / total) if total > retained else 0.0
+                    for ns, count in namespace_counts.items():
+                        ns_total[ns] = count
+                        ns_suppressed[ns] = int(count * drop_ratio)
+            if ns_total:
+                self._cluster_profile.update_noise_scores(ns_total, ns_suppressed)
+
+            # Sync model health from inference stats
+            for model, stats in self.model_stats.items():
+                calls = stats.get("calls", 0)
+                if calls > 0:
+                    errors = stats.get("errors", 0)
+                    latency_avg = stats.get("latency_sum", 0) / calls
+                    self._cluster_profile.model_health[model] = {
+                        "calls": calls,
+                        "errors": errors,
+                        "total_latency": stats.get("latency_sum", 0),
+                        "error_rate": round(errors / calls, 4),
+                        "avg_latency": round(latency_avg, 1),
+                    }
 
             from app.session.cluster_profile import persist_profile
             persist_profile(self._cluster_profile)
@@ -953,7 +1021,7 @@ class StreamingSession:
                     self.metrics["avg_tps"] = round(self._window_tps_sum / self._window_inference, 1)
 
                 if model not in self.model_stats:
-                    self.model_stats[model] = {"calls": 0, "latency_sum": 0, "tps_sum": 0, "in_flight": 0}
+                    self.model_stats[model] = {"calls": 0, "latency_sum": 0, "tps_sum": 0, "in_flight": 0, "errors": 0}
                 self.model_stats[model]["calls"] += 1
                 self.model_stats[model]["latency_sum"] += resp.latency_ms
                 self.model_stats[model]["tps_sum"] += resp.tokens_per_second
@@ -983,6 +1051,10 @@ class StreamingSession:
                 self._feed_incident(task, model, resp.output or "")
             else:
                 self.totals["inference_calls"] += 1
+                if model not in self.model_stats:
+                    self.model_stats[model] = {"calls": 0, "latency_sum": 0, "tps_sum": 0, "in_flight": 0, "errors": 0}
+                self.model_stats[model]["calls"] += 1
+                self.model_stats[model]["errors"] = self.model_stats[model].get("errors", 0) + 1
                 self.store.add_inference({
                     "model": model, "tier": tier, "task_type": task.task_type,
                     "prompt": task.prompt, "output": "", "error": resp.error or "unknown",

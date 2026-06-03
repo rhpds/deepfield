@@ -16,6 +16,16 @@ _eval_lock = threading.Lock()
 _CACHE_TTL = 300  # 5 minutes
 
 
+@router.get("/clusters")
+async def list_clusters():
+    """List configured cluster IDs for the cluster selector."""
+    from app.api.session import CLUSTER_CONFIGS
+    clusters = [c.get("name", f"cluster-{i}") for i, c in enumerate(CLUSTER_CONFIGS)]
+    if not clusters:
+        clusters = ["infra01"]
+    return {"clusters": clusters}
+
+
 @router.get("/proposals")
 async def get_proposals(cluster_id: Optional[str] = None, status: str = "pending"):
     """Get tuning proposals, optionally filtered by cluster and status."""

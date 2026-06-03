@@ -124,31 +124,20 @@ class SignalStore:
         })
 
     def update_cluster_stats(self, cluster_name: str, signals: list):
-        """Accumulate cluster infrastructure counts from signal batches."""
+        """Update cluster stats from problem signals only (healthy pod/node counts are synced from collectors)."""
         if cluster_name not in self.cluster_stats:
             self.cluster_stats[cluster_name] = ClusterStats(cluster_name=cluster_name)
         cs = self.cluster_stats[cluster_name]
         for s in signals:
             sig_type = s.signal_type
-            if sig_type == "pod_running":
-                cs.pods_running += 1
-            elif sig_type == "pod_pending":
-                cs.pods_pending += 1
-            elif sig_type == "pod_crashloop":
-                cs.pods_crashloop += 1
-            elif sig_type in ("pod_failed", "pod_imagepullbackoff"):
-                cs.pods_failed += 1
-            elif sig_type == "node_ready":
-                cs.nodes_ready += 1
-            elif sig_type == "node_pressure":
-                cs.nodes_pressure += 1
-            elif sig_type.startswith("event_") and sig_type not in ("event_normal", "event_pulling", "event_pulled", "event_created", "event_started", "event_scheduled", "event_successfulcreate", "event_successfuldelete"):
+            if sig_type.startswith("event_") and sig_type not in ("event_normal", "event_pulling", "event_pulled", "event_created", "event_started", "event_scheduled", "event_successfulcreate", "event_successfuldelete"):
                 cs.total_events_warning += 1
             ns = s.namespace
             if ns:
                 cs.namespaces[ns] = cs.namespaces.get(ns, 0) + 1
-        cs.total_pods = cs.pods_running + cs.pods_pending + cs.pods_crashloop + cs.pods_failed
-        cs.total_nodes = cs.nodes_ready + cs.nodes_pressure
+        if len(cs.namespaces) > 500:
+            top = sorted(cs.namespaces.items(), key=lambda x: x[1], reverse=True)[:200]
+            cs.namespaces = dict(top)
         cs.last_scan = datetime.now(timezone.utc).isoformat()
 
     def add_decision(self, decision_dict: dict):

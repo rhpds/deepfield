@@ -45,6 +45,16 @@ class OpenShiftCollector:
         self._stop = threading.Event()
         self._initial_scan_done = False
 
+        # Infra counts — replaced per rescan, not additive
+        self._infra_counts: Dict[str, int] = {
+            "pods_running": 0, "pods_pending": 0, "pods_failed": 0,
+            "pods_crashloop": 0, "nodes_ready": 0, "nodes_pressure": 0,
+        }
+        self._infra_lock = threading.Lock()
+
+        # Rescan dedup — only re-emit when a pod/node changes state
+        self._seen_states: Dict[str, str] = {}
+
     @property
     def read_only(self) -> bool:
         return self._read_only
@@ -163,6 +173,8 @@ class OpenShiftCollector:
 
     def rescan(self):
         """Periodic re-scan — captures current state for pods stuck in stable bad states."""
+        with self._infra_lock:
+            self._infra_counts = {k: 0 for k in self._infra_counts}
         data = self._k8s_get("/api/v1/pods")
         if data:
             for item in data.get("items", []):
@@ -236,6 +248,19 @@ class OpenShiftCollector:
                 detail["exit_message"] = last["message"][:200]
         return detail
 
+    def _buffer_problem_signal(self, signal: RawSignal):
+        """Buffer only if this resource's state actually changed since last scan."""
+        key = f"{signal.namespace}:{signal.resource_kind}:{signal.resource_name}"
+        new_state = signal.signal_type
+        if self._seen_states.get(key) == new_state:
+            return
+        self._seen_states[key] = new_state
+        self._buffer_signal(signal)
+
+    def get_infra_counts(self) -> Dict[str, int]:
+        with self._infra_lock:
+            return dict(self._infra_counts)
+
     def _process_pod(self, item: dict, event_type: str = ""):
         ns = item.get("metadata", {}).get("namespace", "")
         if not self._ns_allowed(ns):
@@ -252,14 +277,16 @@ class OpenShiftCollector:
                 reason = waiting.get("reason", "")
                 if restarts > 3 or reason == "CrashLoopBackOff":
                     detail = self._container_detail(cs)
-                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
+                    self._buffer_problem_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
                         {"restartCount": restarts, "reason": "CrashLoopBackOff", **detail, **pod_ctx}))
                     return
                 elif reason == "ImagePullBackOff":
-                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
+                    self._buffer_problem_signal(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
                         {"reason": reason, "image": cs.get("image", ""), **pod_ctx}))
                     return
-            self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_running", {}))
+            # Count healthy pods for stats — don't buffer as signals
+            with self._infra_lock:
+                self._infra_counts["pods_running"] = self._infra_counts.get("pods_running", 0) + 1
         elif phase == "Pending":
             conditions = status.get("conditions", [])
             sched = next((c for c in conditions if c.get("type") == "PodScheduled" and c.get("status") == "False"), None)
@@ -267,21 +294,25 @@ class OpenShiftCollector:
             if sched:
                 payload["schedule_reason"] = sched.get("reason", "")
                 payload["schedule_message"] = sched.get("message", "")[:200]
-            self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_pending", payload))
+            self._buffer_problem_signal(self._make_signal(ns, "Pod", name, "pod_pending", payload))
+            with self._infra_lock:
+                self._infra_counts["pods_pending"] = self._infra_counts.get("pods_pending", 0) + 1
         elif phase == "Failed":
-            self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
+            self._buffer_problem_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
                 {"phase": phase, "reason": status.get("reason", ""), "message": status.get("message", "")[:200], **pod_ctx}))
+            with self._infra_lock:
+                self._infra_counts["pods_failed"] = self._infra_counts.get("pods_failed", 0) + 1
         else:
             for cs in status.get("containerStatuses", []) + status.get("initContainerStatuses", []):
                 waiting = cs.get("state", {}).get("waiting", {})
                 reason = waiting.get("reason", "")
                 if reason == "ImagePullBackOff":
-                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
+                    self._buffer_problem_signal(self._make_signal(ns, "Pod", name, "pod_imagepullbackoff",
                         {"reason": reason, "image": cs.get("image", ""), **pod_ctx}))
                     return
                 elif reason in ("CrashLoopBackOff", "Error", "CreateContainerError"):
                     detail = self._container_detail(cs)
-                    self._buffer_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
+                    self._buffer_problem_signal(self._make_signal(ns, "Pod", name, "pod_crashloop",
                         {"reason": reason, **detail, **pod_ctx}))
                     return
 
@@ -290,13 +321,16 @@ class OpenShiftCollector:
         conditions = {c["type"]: c for c in item.get("status", {}).get("conditions", [])}
         ready = conditions.get("Ready", {})
         if ready.get("status") == "True":
-            self._buffer_signal(self._make_signal("", "Node", name, "node_ready", {}))
+            with self._infra_lock:
+                self._infra_counts["nodes_ready"] = self._infra_counts.get("nodes_ready", 0) + 1
         else:
-            self._buffer_signal(self._make_signal("", "Node", name, "node_pressure", {"condition": "NotReady"}))
+            self._buffer_problem_signal(self._make_signal("", "Node", name, "node_pressure", {"condition": "NotReady"}))
+            with self._infra_lock:
+                self._infra_counts["nodes_pressure"] = self._infra_counts.get("nodes_pressure", 0) + 1
         for ptype in ("MemoryPressure", "DiskPressure", "PIDPressure"):
             cond = conditions.get(ptype, {})
             if cond.get("status") == "True":
-                self._buffer_signal(self._make_signal("", "Node", name, "node_pressure", {"condition": ptype}))
+                self._buffer_problem_signal(self._make_signal("", "Node", name, "node_pressure", {"condition": ptype}))
 
     def _process_event(self, item: dict):
         ns = item.get("metadata", {}).get("namespace", "")

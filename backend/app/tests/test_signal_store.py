@@ -28,19 +28,21 @@ def test_signal_store_captures_inferences():
 
 
 def test_signal_store_tracks_cluster_stats():
+    """Cluster stats: pod/node counts come from collector infra counts,
+    update_cluster_stats only tracks warning events and namespace activity."""
     from types import SimpleNamespace
     store = SignalStore()
     signals = [
-        SimpleNamespace(signal_type="pod_running", namespace="stargate"),
-        SimpleNamespace(signal_type="pod_crashloop", namespace="stargate"),
-        SimpleNamespace(signal_type="node_ready", namespace=""),
+        SimpleNamespace(signal_type="event_backoff", namespace="stargate"),
+        SimpleNamespace(signal_type="event_backoff", namespace="stargate"),
+        SimpleNamespace(signal_type="pod_crashloop", namespace="deepfield"),
     ]
     store.update_cluster_stats("infra01", signals)
     clusters = store.get_cluster_summary()
     assert "infra01" in clusters
-    assert clusters["infra01"]["pods_running"] == 1
-    assert clusters["infra01"]["pods_crashloop"] == 1
-    assert clusters["infra01"]["nodes_ready"] == 1
+    assert clusters["infra01"]["total_events_warning"] == 2
+    assert clusters["infra01"]["namespaces"]["stargate"] == 2
+    assert clusters["infra01"]["namespaces"]["deepfield"] == 1
 
 
 def test_signal_store_respects_max_size():

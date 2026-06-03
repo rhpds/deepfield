@@ -15,6 +15,7 @@ import LivePanel from './pages/LivePanel';
 import Incidents from './pages/Incidents';
 import Tuning from './pages/Tuning';
 import Scenarios from './pages/Scenarios';
+import Replay from './pages/Replay';
 
 interface NavGroup {
   label: string;
@@ -73,6 +74,7 @@ function AppLayout() {
     { label: 'Quality', items: [
       { to: '/tuning', label: 'Rubrics' },
       { to: '/scenarios', label: 'Scenarios' },
+      { to: '/replay', label: 'Replay' },
     ]},
   ];
 
@@ -132,6 +134,7 @@ export default function App() {
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/tuning" element={<Tuning />} />
           <Route path="/scenarios" element={<Scenarios />} />
+          <Route path="/replay" element={<Replay />} />
           <Route path="/simulator" element={<LivePanel />} />
         </Route>
       </Routes>

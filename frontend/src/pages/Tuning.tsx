@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, Cell } from 'recharts';
 
 interface RubricResult {
   score: 'healthy' | 'warning' | 'failing';
@@ -59,6 +60,14 @@ const RUBRIC_LABELS: Record<string, string> = {
   signal_coverage: 'Coverage',
   tuning_safety: 'Safety',
 };
+const SCORE_VALUE: Record<string, number> = { healthy: 2, warning: 1, failing: 0 };
+const RUBRIC_COLORS: Record<string, string> = {
+  compression_quality: '#0071C5',
+  classification_accuracy: '#F0AB00',
+  inference_value: '#C9190B',
+  signal_coverage: '#3E8635',
+  tuning_safety: '#6A6E73',
+};
 
 export default function Tuning() {
   const [evaluation, setEvaluation] = useState<EvalResult | null>(null);
@@ -66,27 +75,42 @@ export default function Tuning() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [history, setHistory] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [clusters, setClusters] = useState<string[]>([]);
+  const [selectedCluster, setSelectedCluster] = useState('infra01');
 
   useEffect(() => {
+    fetch('/api/v1/tuning/clusters').then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.clusters?.length) {
+        setClusters(d.clusters);
+        setSelectedCluster(d.clusters[0]);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     async function load() {
       try {
+        const c = selectedCluster;
         const [evalRes, propRes, profRes, histRes] = await Promise.all([
-          fetch('/api/v1/tuning/evaluate/infra01'),
+          fetch(`/api/v1/tuning/evaluate/${c}`),
           fetch('/api/v1/tuning/proposals'),
-          fetch('/api/v1/tuning/profile/infra01'),
-          fetch('/api/v1/tuning/evaluate/infra01/history'),
+          fetch(`/api/v1/tuning/profile/${c}`),
+          fetch(`/api/v1/tuning/evaluate/${c}/history`),
         ]);
+        if (cancelled) return;
         if (evalRes.ok) setEvaluation(await evalRes.json());
         if (propRes.ok) { const d = await propRes.json(); setProposals(d.proposals || []); }
         if (profRes.ok) setProfile(await profRes.json());
         if (histRes.ok) setHistory(await histRes.json());
       } catch { /* */ }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     }
+    setLoading(true);
     load();
     const poll = setInterval(load, 30000);
-    return () => clearInterval(poll);
-  }, []);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [selectedCluster]);
 
   if (loading) {
     return (
@@ -99,9 +123,23 @@ export default function Tuning() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: 'Red Hat Display' }}>Pipeline Quality</h1>
-        <p className="text-sm text-[#6A6E73]">EDD rubrics — continuous evaluation of signal intelligence quality</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: 'Red Hat Display' }}>Pipeline Quality</h1>
+          <p className="text-sm text-[#6A6E73]">EDD rubrics — continuous evaluation of signal intelligence quality</p>
+        </div>
+        {clusters.length > 1 && (
+          <div className="flex gap-1">
+            {clusters.map(c => (
+              <button key={c} onClick={() => setSelectedCluster(c)}
+                className={`px-3 py-1.5 rounded text-xs font-bold transition ${
+                  c === selectedCluster ? 'bg-white/15 text-white' : 'text-[#6A6E73] hover:text-white hover:bg-white/10'
+                }`}>
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Overall score */}
@@ -158,6 +196,27 @@ export default function Tuning() {
               </span>
             )}
           </div>
+          {history.evaluations.length >= 3 && (
+            <div className="mb-3">
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart data={history.evaluations.slice(-20).map(e => ({
+                  time: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  overall: SCORE_VALUE[e.overall] ?? 1,
+                  ...Object.fromEntries(Object.entries(e.rubrics || {}).map(([k, v]) => [k, SCORE_VALUE[v as string] ?? 1])),
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#6A6E73' }} stroke="#333" />
+                  <YAxis domain={[0, 2]} ticks={[0, 1, 2]} tickFormatter={(v: number) => ['FAIL', 'WARN', 'OK'][v] || ''} tick={{ fontSize: 10, fill: '#6A6E73' }} stroke="#333" width={40} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: 6, fontSize: 11 }}
+                    formatter={(v, name) => [['failing','warning','healthy'][v as number] || v, RUBRIC_LABELS[name as string] || name]} />
+                  <Line dataKey="overall" stroke="#fff" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                  {Object.entries(RUBRIC_COLORS).map(([key, color]) => (
+                    <Line key={key} dataKey={key} stroke={color} strokeWidth={1.5} dot={false} type="stepAfter" />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           <div className="flex items-center gap-1">
             {history.evaluations.slice(-20).map((e, i) => (
               <div key={i} className="flex flex-col items-center gap-0.5" title={`${new Date(e.timestamp).toLocaleTimeString()} — ${e.overall} (${e.source})`}>
@@ -176,12 +235,13 @@ export default function Tuning() {
             <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
               Adaptive Profile — {profile.cluster_id}
             </div>
-            <span className="text-xs text-[#6A6E73]">
-              Confidence: <span className="text-white font-bold">{(profile.confidence * 100).toFixed(0)}%</span>
+            <span className="text-xs text-[#6A6E73] flex gap-4">
+              <span>Confidence: <span className="text-white font-bold">{(profile.confidence * 100).toFixed(0)}%</span></span>
+              <span>Baseline: <span className="text-white font-bold">{profile.baseline_signals_per_second.toFixed(1)} sig/s</span></span>
             </span>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {/* Dedup windows */}
             <div>
               <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Learned Dedup Windows</div>
@@ -222,6 +282,28 @@ export default function Tuning() {
               )}
             </div>
 
+            {/* Dampen thresholds */}
+            <div>
+              <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Dampen Thresholds</div>
+              {Object.keys(profile.namespace_dampen_thresholds).length === 0 ? (
+                <p className="text-xs text-[#6A6E73]">Default (10) for all</p>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(profile.namespace_dampen_thresholds)
+                    .sort(([, a], [, b]) => a - b)
+                    .slice(0, 8)
+                    .map(([ns, threshold]) => (
+                      <div key={ns} className="flex justify-between text-xs">
+                        <span className="text-[#6A6E73] truncate">{ns}</span>
+                        <span className="font-mono" style={{ color: threshold <= 3 ? '#C9190B' : threshold <= 5 ? '#F0AB00' : '#3E8635' }}>
+                          {threshold}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
             {/* Model health */}
             <div>
               <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Model Health</div>
@@ -243,6 +325,41 @@ export default function Tuning() {
           </div>
         </div>
       )}
+
+      {/* Namespace threshold analysis */}
+      {profile && (() => {
+        const nsMerged = Array.from(new Set([
+          ...Object.keys(profile.namespace_noise_scores),
+          ...Object.keys(profile.namespace_dampen_thresholds),
+        ])).map(ns => ({
+          namespace: ns.length > 20 ? ns.slice(0, 18) + '...' : ns,
+          noise: Math.round((profile.namespace_noise_scores[ns] || 0) * 100),
+          threshold: profile.namespace_dampen_thresholds[ns] || 10,
+        })).sort((a, b) => b.noise - a.noise).slice(0, 12);
+
+        if (nsMerged.length === 0) return null;
+        return (
+          <div className="border border-[#333] rounded-xl p-4">
+            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">Namespace Threshold Analysis</div>
+            <ResponsiveContainer width="100%" height={Math.max(180, nsMerged.length * 28)}>
+              <BarChart data={nsMerged} layout="vertical" margin={{ left: 10, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#6A6E73' }} stroke="#333" />
+                <YAxis dataKey="namespace" type="category" width={130} tick={{ fontSize: 10, fill: '#6A6E73' }} stroke="#333" />
+                <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: 6, fontSize: 11 }}
+                  formatter={(v, name) => [name === 'noise' ? `${v}%` : v, name === 'noise' ? 'Noise Score' : 'Dampen Threshold']} />
+                <Legend wrapperStyle={{ fontSize: 11, color: '#6A6E73' }} />
+                <Bar dataKey="noise" name="Noise %" barSize={10}>
+                  {nsMerged.map((d, i) => (
+                    <Cell key={i} fill={d.noise > 90 ? '#C9190B' : d.noise > 50 ? '#F0AB00' : '#3E8635'} />
+                  ))}
+                </Bar>
+                <Bar dataKey="threshold" name="Threshold" fill="#0071C5" barSize={10} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
 
       {/* Tuning Proposals */}
       <div className="border border-[#333] rounded-xl p-4">
