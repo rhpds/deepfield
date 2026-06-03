@@ -1022,6 +1022,10 @@ class StreamingSession:
         import re as _re
         if resp.output:
             resp.output = _re.sub(r'<think>.*?</think>', '', resp.output, flags=_re.DOTALL).strip()
+            # Strip untagged thinking — models sometimes emit reasoning before JSON
+            json_start = resp.output.find('{')
+            if json_start > 0:
+                resp.output = resp.output[json_start:]
         tier = "micro" if "cpu" in model or "granite" in model or "phi3" in model or "qwen25" in model else "macro"
         with self._lock:
             self.metrics["inference_in_flight"] = max(0, self.metrics["inference_in_flight"] - 1)

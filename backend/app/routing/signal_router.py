@@ -84,9 +84,9 @@ def route_signals(signals: List[NormalizedSignal], decisions: List[FilterDecisio
 def _build_evidence_block(f: CandidateFinding) -> dict:
     signals = f.evidence.get("signals", [])[:10]
     cluster_names = list({
-        s.get("evidence", {}).get("source", "").split(":", 1)[-1]
+        s.get("cluster", "") or s.get("evidence", {}).get("source", "").split(":", 1)[-1]
         for s in signals
-        if ":" in s.get("evidence", {}).get("source", "")
+        if s.get("cluster") or ":" in s.get("evidence", {}).get("source", "")
     }) or [str(c)[:8] for c in f.clusters]
     return {
         "finding_type": f.finding_type,
