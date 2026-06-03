@@ -161,15 +161,19 @@ class StreamingSession:
         self._window_inference = 0
         self._last_snapshot = 0
 
-        # Cluster profile (adaptive thresholds)
+        # Cluster profiles (adaptive thresholds) — one per cluster
         self._cluster_profile = None
+        self._cluster_profiles: dict = {}
         if self.source == "live" and self.cluster_configs:
             from app.session.cluster_profile import get_profile, load_profiles_from_db
             load_profiles_from_db()
-            cluster_name = self.cluster_configs[0].get("name", "unknown")
-            self._cluster_profile = get_profile(cluster_name)
-            logger.info("Loaded cluster profile for %s (confidence=%.2f)",
-                        cluster_name, self._cluster_profile.confidence)
+            for cfg in self.cluster_configs:
+                cname = cfg.get("name", "unknown")
+                self._cluster_profiles[cname] = get_profile(cname)
+                logger.info("Loaded cluster profile for %s (confidence=%.2f)",
+                            cname, self._cluster_profiles[cname].confidence)
+            first_name = self.cluster_configs[0].get("name", "unknown")
+            self._cluster_profile = self._cluster_profiles[first_name]
 
         # Prometheus
         self._prom = None
@@ -309,6 +313,8 @@ class StreamingSession:
 
     def _sync_infra_counts(self):
         """Pull current infra counts from collectors and reset cluster stats."""
+        if not self._collectors:
+            return
         for c in self._collectors:
             counts = c.get_infra_counts()
             cs = self.store.cluster_stats.get(c.cluster_name)
@@ -321,6 +327,7 @@ class StreamingSession:
                 cs.nodes_pressure = counts.get("nodes_pressure", 0)
                 cs.total_pods = cs.pods_running + cs.pods_pending + cs.pods_crashloop + cs.pods_failed
                 cs.total_nodes = cs.nodes_ready + cs.nodes_pressure
+                cs.total_events_warning = 0
 
     def _emit_synthetic(self):
         """Continuously generates synthetic signals at the configured rate."""
@@ -648,70 +655,62 @@ class StreamingSession:
                 self._stop.wait(1.0)
 
     def _update_cluster_profile(self):
-        """Update the cluster profile with recent signal patterns."""
-        if not self._cluster_profile:
+        """Update cluster profiles with recent signal patterns — one per cluster."""
+        if not self._cluster_profiles:
             return
         try:
-            signal_counts: dict = {}
-            namespace_counts: dict = {}
-            for s in list(self.store.recent_signals)[-200:]:
-                st = s.get("signal_type", "")
-                ns = s.get("namespace", "")
-                signal_counts[st] = signal_counts.get(st, 0) + 1
-                namespace_counts[ns] = namespace_counts.get(ns, 0) + 1
-
-            self._cluster_profile.update_from_signals(
-                signal_counts, namespace_counts,
-                total_signals=self.totals["raw_signals"],
-                duration_hours=max(0.01, (time.monotonic() - self._window_start) / 3600),
-            )
-
-            # Compute noise scores from recent decisions
-            ns_total: dict = {}
-            ns_suppressed: dict = {}
-            for d in list(self.store.recent_decisions)[-500:]:
-                sig_id = d.get("signal_id", "")
-                outcome = d.get("outcome", "")
-                # Find the namespace from recent signals by signal_id prefix match
-                ns = ""
-                for s in list(self.store.recent_signals)[-500:]:
-                    if s.get("signal_type", "")[:8] == sig_id or s.get("namespace", ""):
-                        ns = s.get("namespace", "")
-                        break
-                if not ns:
-                    ns = d.get("evidence", {}).get("namespace", "") if isinstance(d.get("evidence"), dict) else ""
-                if ns:
-                    ns_total[ns] = ns_total.get(ns, 0) + 1
-                    if outcome in ("suppress", "dedupe", "drop"):
-                        ns_suppressed[ns] = ns_suppressed.get(ns, 0) + 1
-            if not ns_total:
-                # Fallback: approximate from signal counts vs retained
-                retained = self.totals.get("retained", 0)
-                total = self.totals.get("raw_signals", 0)
-                if total > 0:
-                    drop_ratio = 1.0 - (retained / total) if total > retained else 0.0
-                    for ns, count in namespace_counts.items():
-                        ns_total[ns] = count
-                        ns_suppressed[ns] = int(count * drop_ratio)
-            if ns_total:
-                self._cluster_profile.update_noise_scores(ns_total, ns_suppressed)
-
-            # Sync model health from inference stats
-            for model, stats in self.model_stats.items():
-                calls = stats.get("calls", 0)
-                if calls > 0:
-                    errors = stats.get("errors", 0)
-                    latency_avg = stats.get("latency_sum", 0) / calls
-                    self._cluster_profile.model_health[model] = {
-                        "calls": calls,
-                        "errors": errors,
-                        "total_latency": stats.get("latency_sum", 0),
-                        "error_rate": round(errors / calls, 4),
-                        "avg_latency": round(latency_avg, 1),
-                    }
-
             from app.session.cluster_profile import persist_profile
-            persist_profile(self._cluster_profile)
+            duration_hours = max(0.01, (time.monotonic() - self._window_start) / 3600)
+
+            # Bucket recent signals by cluster
+            per_cluster: dict = {}
+            for s in list(self.store.recent_signals)[-500:]:
+                cluster = s.get("cluster", "")
+                if not cluster:
+                    src = s.get("source", "")
+                    cluster = src.split(":", 1)[-1] if ":" in src else src
+                if cluster:
+                    per_cluster.setdefault(cluster, []).append(s)
+
+            for cluster_name, profile in self._cluster_profiles.items():
+                signals = per_cluster.get(cluster_name, [])
+                signal_counts: dict = {}
+                namespace_counts: dict = {}
+                for s in signals:
+                    signal_counts[s.get("signal_type", "")] = signal_counts.get(s.get("signal_type", ""), 0) + 1
+                    ns = s.get("namespace", "")
+                    if ns:
+                        namespace_counts[ns] = namespace_counts.get(ns, 0) + 1
+
+                if signal_counts:
+                    profile.update_from_signals(
+                        signal_counts, namespace_counts,
+                        total_signals=self.totals["raw_signals"],
+                        duration_hours=duration_hours,
+                    )
+
+                # Noise scores — approximate from overall suppression ratio
+                if namespace_counts:
+                    retained = self.totals.get("retained", 0)
+                    total = self.totals.get("raw_signals", 0)
+                    drop_ratio = 1.0 - (retained / total) if total > retained > 0 else 0.5
+                    ns_total = dict(namespace_counts)
+                    ns_suppressed = {ns: int(c * drop_ratio) for ns, c in namespace_counts.items()}
+                    profile.update_noise_scores(ns_total, ns_suppressed)
+
+                # Model health — shared across clusters (same inference fleet)
+                for model, stats in self.model_stats.items():
+                    calls = stats.get("calls", 0)
+                    if calls > 0:
+                        errors = stats.get("errors", 0)
+                        profile.model_health[model] = {
+                            "calls": calls, "errors": errors,
+                            "total_latency": stats.get("latency_sum", 0),
+                            "error_rate": round(errors / calls, 4),
+                            "avg_latency": round(stats.get("latency_sum", 0) / calls, 1),
+                        }
+
+                persist_profile(profile)
         except Exception as e:
             logger.warning("Profile update failed: %s", e)
 

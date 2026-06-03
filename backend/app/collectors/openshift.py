@@ -156,6 +156,8 @@ class OpenShiftCollector:
 
     def _initial_scan(self):
         logger.info("Initial scan of %s...", self.cluster_name)
+        with self._infra_lock:
+            self._infra_counts = {k: 0 for k in self._infra_counts}
         data = self._k8s_get("/api/v1/pods")
         if data:
             for item in data.get("items", []):

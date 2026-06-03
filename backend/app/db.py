@@ -123,11 +123,20 @@ def _start_writer():
     _writer_thread.start()
 
 
+_RETENTION_DAYS = int(os.getenv("DB_RETENTION_DAYS", "7"))
+_RETENTION_TABLES = ("signals", "decisions", "inferences", "findings",
+                     "metrics_snapshots", "session_snapshots", "agent_stats_snapshots")
+
+
 def _writer_loop():
     """Background thread that batches and writes queued data to the database."""
     _db_url = os.getenv("DATABASE_URL", "")
     if not _db_url:
         return
+
+    import time as _time
+    _last_retention = _time.monotonic()
+    _RETENTION_INTERVAL = 3600
 
     while not _writer_stop.is_set():
         batch = []
@@ -140,7 +149,38 @@ def _writer_loop():
         if batch:
             _flush_batch_sync(batch, _db_url)
 
+        if _time.monotonic() - _last_retention >= _RETENTION_INTERVAL:
+            _run_retention_sync(_db_url)
+            _last_retention = _time.monotonic()
+
         _writer_stop.wait(0.5)
+
+
+def _run_retention_sync(db_url: str):
+    """Delete rows older than _RETENTION_DAYS from high-volume tables."""
+    import asyncio, asyncpg
+    async def _do():
+        try:
+            conn = await asyncpg.connect(db_url)
+            try:
+                for table in _RETENTION_TABLES:
+                    try:
+                        result = await conn.execute(
+                            f"DELETE FROM {table} WHERE captured_at < now() - interval '{_RETENTION_DAYS} days'"
+                        )
+                        if result and result != "DELETE 0":
+                            logger.info("Retention cleanup %s: %s", table, result)
+                    except Exception as e:
+                        logger.debug("Retention skip %s: %s", table, str(e)[:80])
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.debug("Retention connect failed: %s", str(e)[:100])
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_do())
+    finally:
+        loop.close()
 
 
 def _coerce_value(col: str, val):

@@ -94,18 +94,24 @@ export default function Replay() {
   useEffect(() => {
     if (!selectedId) { setDetail(null); return; }
     let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
     async function load() {
       try {
         const res = await fetch(`/api/v1/workers/replay/${selectedId}`);
-        if (res.ok && !cancelled) setDetail(await res.json());
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setDetail(data);
+          if (poll && data.status !== 'running' && data.status !== 'pending') {
+            clearInterval(poll);
+            poll = null;
+          }
+        }
       } catch { /* */ }
     }
     load();
-    const shouldPoll = !detail || detail.status === 'running' || detail.status === 'pending';
-    if (!shouldPoll) return;
-    const poll = setInterval(load, 3000);
-    return () => { cancelled = true; clearInterval(poll); };
-  }, [selectedId, detail?.status]);
+    poll = setInterval(load, 3000);
+    return () => { cancelled = true; if (poll) clearInterval(poll); };
+  }, [selectedId]);
 
   function setPreset(hours: number) {
     const now = new Date();
