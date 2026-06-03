@@ -484,11 +484,17 @@ class StreamingSession:
                                      + pipeline_result["deduped_count"]
                                      + routing_result["dropped_count"])
 
+                    # Build signal_id → namespace lookup for decision tracking
+                    sig_ns_map = {str(s.signal_id)[:8]: s.namespace for s in normalized if hasattr(s, 'namespace')}
                     for d in pipeline_result.get("decisions", []):
+                        sid = str(d.signal_id)[:8]
+                        evidence = d.evidence if isinstance(d.evidence, dict) else {}
+                        if "namespace" not in evidence:
+                            evidence = {**evidence, "namespace": sig_ns_map.get(sid, "")}
                         self.store.add_decision({
                             "filter_name": d.filter_name, "outcome": d.outcome,
-                            "reason": d.reason_code, "signal_id": str(d.signal_id)[:8],
-                            "evidence": d.evidence,
+                            "reason": d.reason_code, "signal_id": sid,
+                            "evidence": evidence,
                         })
                         if d.outcome == "escalate":
                             self._log_event("nano", "escalate", {
@@ -672,6 +678,18 @@ class StreamingSession:
                 if cluster:
                     per_cluster.setdefault(cluster, []).append(s)
 
+            # Build per-namespace decision counts from recent decisions
+            ns_decision_total: dict = {}
+            ns_decision_suppressed: dict = {}
+            for d in list(self.store.recent_decisions)[-1000:]:
+                evidence = d.get("evidence", {})
+                ns = evidence.get("namespace", "") if isinstance(evidence, dict) else ""
+                if not ns:
+                    continue
+                ns_decision_total[ns] = ns_decision_total.get(ns, 0) + 1
+                if d.get("outcome") in ("suppress", "dedupe", "drop"):
+                    ns_decision_suppressed[ns] = ns_decision_suppressed.get(ns, 0) + 1
+
             for cluster_name, profile in self._cluster_profiles.items():
                 signals = per_cluster.get(cluster_name, [])
                 signal_counts: dict = {}
@@ -685,18 +703,17 @@ class StreamingSession:
                 if signal_counts:
                     profile.update_from_signals(
                         signal_counts, namespace_counts,
-                        total_signals=self.totals["raw_signals"],
+                        total_signals=len(signals),
                         duration_hours=duration_hours,
                     )
 
-                # Noise scores — approximate from overall suppression ratio
-                if namespace_counts:
-                    retained = self.totals.get("retained", 0)
-                    total = self.totals.get("raw_signals", 0)
-                    drop_ratio = 1.0 - (retained / total) if total > retained > 0 else 0.5
-                    ns_total = dict(namespace_counts)
-                    ns_suppressed = {ns: int(c * drop_ratio) for ns, c in namespace_counts.items()}
-                    profile.update_noise_scores(ns_total, ns_suppressed)
+                # Noise scores from per-namespace decision tracking
+                cluster_ns = set(namespace_counts.keys())
+                if cluster_ns and ns_decision_total:
+                    ns_total = {ns: ns_decision_total.get(ns, 0) for ns in cluster_ns if ns_decision_total.get(ns, 0) >= 10}
+                    ns_suppressed = {ns: ns_decision_suppressed.get(ns, 0) for ns in ns_total}
+                    if ns_total:
+                        profile.update_noise_scores(ns_total, ns_suppressed)
 
                 # Model health — shared across clusters (same inference fleet)
                 for model, stats in self.model_stats.items():
