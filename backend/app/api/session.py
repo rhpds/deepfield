@@ -43,6 +43,27 @@ def _load_cluster_configs() -> list:
 CLUSTER_CONFIGS = _load_cluster_configs()
 
 
+def _load_splunk_configs() -> list:
+    """Load Splunk instance configs from environment variables."""
+    configs = []
+    for i in range(1, 6):
+        name = os.getenv(f"SPLUNK_{i}_NAME", "")
+        url = os.getenv(f"SPLUNK_{i}_URL", "")
+        token = os.getenv(f"SPLUNK_{i}_TOKEN", "")
+        if name and url:
+            configs.append({
+                "name": name,
+                "url": url,
+                "token": token,
+                "poll_interval": int(os.getenv(f"SPLUNK_{i}_POLL_INTERVAL", "60")),
+                "indexes": os.getenv(f"SPLUNK_{i}_INDEXES", "*").split(","),
+            })
+    return configs
+
+
+SPLUNK_CONFIGS = _load_splunk_configs()
+
+
 def start_live_monitoring():
     """Auto-start live monitoring at pod startup. Uses real inference."""
     global _live_session_id
@@ -59,6 +80,7 @@ def start_live_monitoring():
     session = create_streaming_session(
         client=client, seed=1,
         source="live", cluster_configs=CLUSTER_CONFIGS, scan_interval=30,
+        splunk_configs=SPLUNK_CONFIGS,
     )
     session.start()
     _live_session_id = session.session_id

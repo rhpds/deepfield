@@ -62,13 +62,15 @@ def get_active_sessions() -> dict:
 
 class StreamingSession:
     def __init__(self, session_id: str, client: Optional[InferenceClient] = None, seed: int = 42,
-                 source: str = "synthetic", cluster_configs: Optional[list] = None, scan_interval: int = 30):
+                 source: str = "synthetic", cluster_configs: Optional[list] = None, scan_interval: int = 30,
+                 splunk_configs: Optional[list] = None):
         self.session_id = session_id
         self.client = client or MockInferenceClient(seed=seed)
         self.seed = seed
         self.source = source
         self.scan_interval = scan_interval
         self.cluster_configs = cluster_configs or []
+        self.splunk_configs = splunk_configs or []
         self.params = SessionParams()
         self.status = "idle"
         self.target_namespaces: Optional[list] = None
@@ -276,7 +278,7 @@ class StreamingSession:
         self._emit_synthetic()
 
     def _emit_live(self):
-        """Watches real clusters via K8s watch API + periodic re-scans."""
+        """Watches real clusters via K8s watch API + Splunk polling + periodic re-scans."""
         from app.collectors.openshift import OpenShiftCollector
         collectors = []
         for cfg in self.cluster_configs:
@@ -291,12 +293,33 @@ class StreamingSession:
             collectors.append(c)
         self._collectors = collectors
 
+        # Splunk collectors (poll-based, separate from K8s watch)
+        splunk_collectors = []
+        if self.splunk_configs:
+            from app.collectors.splunk import SplunkCollector
+            for cfg in self.splunk_configs:
+                sc = SplunkCollector(
+                    name=cfg["name"],
+                    base_url=cfg["url"],
+                    token=cfg.get("token", ""),
+                    poll_interval=cfg.get("poll_interval", 60),
+                    indexes=cfg.get("indexes"),
+                )
+                sc.start_watching()
+                splunk_collectors.append(sc)
+        self._splunk_collectors = splunk_collectors
+
         last_rescan = time.monotonic()
         rescan_interval = self.scan_interval
 
         while not self._stop.is_set():
             for c in collectors:
                 signals = c.drain_signals()
+                for sig in signals:
+                    self._signal_queue.append(sig)
+
+            for sc in splunk_collectors:
+                signals = sc.drain_signals()
                 for sig in signals:
                     self._signal_queue.append(sig)
 
@@ -310,6 +333,8 @@ class StreamingSession:
 
         for c in collectors:
             c.stop()
+        for sc in splunk_collectors:
+            sc.stop()
 
     def _sync_infra_counts(self):
         """Pull current infra counts from collectors and reset cluster stats."""
@@ -1149,10 +1174,10 @@ class StreamingSession:
             return {"session_id": self.session_id, "status": self.status, "metrics": dict(self.metrics), "totals": self.totals, "agent_log": [], "snapshots": [], "model_stats": {}, "live_inference": {}, "queue_depth": 0}
 
 
-def create_streaming_session(client=None, seed=42, source="synthetic", cluster_configs=None, scan_interval=30):
+def create_streaming_session(client=None, seed=42, source="synthetic", cluster_configs=None, scan_interval=30, splunk_configs=None):
     import uuid
     sid = str(uuid.uuid4())
-    s = StreamingSession(sid, client=client, seed=seed, source=source, cluster_configs=cluster_configs, scan_interval=scan_interval)
+    s = StreamingSession(sid, client=client, seed=seed, source=source, cluster_configs=cluster_configs, scan_interval=scan_interval, splunk_configs=splunk_configs)
     _sessions[sid] = s
     return s
 

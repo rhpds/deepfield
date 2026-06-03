@@ -114,6 +114,14 @@ SIGNAL_RESOURCE_KIND = {
     "stargate_stage_passed": "StarGateRun",
     "stargate_stage_failed": "StarGateRun",
     "stargate_run_completed": "StarGateRun",
+    "splunk_critical_alert": "SplunkAlert",
+    "splunk_high_alert": "SplunkAlert",
+    "splunk_medium_alert": "SplunkAlert",
+    "splunk_low_alert": "SplunkAlert",
+    "splunk_info_alert": "SplunkAlert",
+    "splunk_error_spike": "SplunkAlert",
+    "splunk_slow_response": "SplunkAlert",
+    "splunk_anomaly": "SplunkAlert",
 }
 
 
