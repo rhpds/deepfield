@@ -82,6 +82,8 @@ export default function FleetOverview() {
 
   /* ----- REST polling for observatory + metrics (windowed) ----- */
   const [windowedMetrics, setWindowedMetrics] = useState<Record<string, unknown> | null>(null);
+  const [signalPage, setSignalPage] = useState(0);
+  const SIGNALS_PER_PAGE = 10;
 
   useEffect(() => {
     let cancelled = false;
@@ -228,7 +230,69 @@ export default function FleetOverview() {
       </div>
 
       {/* ============================================================ */}
-      {/*  2. Signal Funnel — compact horizontal bar                    */}
+      {/*  2. Cluster cards (moved up, closer to stats)                 */}
+      {/* ============================================================ */}
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">Clusters</div>
+        </div>
+        {clusters === null ? (
+          <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[1,2,3].map(i => (
+              <div key={i} className="bg-[#212121] rounded-lg h-28" />
+            ))}
+          </div>
+        ) : clusters.length === 0 ? (
+          <div className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-5 text-center">
+            <div className="text-sm text-[#6A6E73]">
+              No clusters connected &mdash; configure <code className="text-xs bg-[#1a1a1a] px-1.5 py-0.5 rounded text-white">CLUSTER_1_*</code> env vars
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {clusters.map((cl) => (
+              <div
+                key={cl.cluster_id}
+                className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4 cursor-pointer hover:border-[#555] transition-colors"
+                onClick={() => navigate(`/cluster/${cl.cluster_id}`)}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-semibold text-white">{cl.cluster_id}</span>
+                  <span className="text-[10px] text-[#6A6E73]">{cl.last_scan ? relativeTime(cl.last_scan) : ''}</span>
+                </div>
+                <div className="grid grid-cols-5 gap-2 text-center mb-3">
+                  {[
+                    { v: cl.total_pods, l: 'Pods', c: 'text-white' },
+                    { v: cl.pods_running, l: 'Running', c: 'text-[#3E8635]' },
+                    { v: cl.pods_pending, l: 'Pending', c: 'text-[#F0AB00]' },
+                    { v: cl.pods_crashloop, l: 'Crash', c: 'text-[#C9190B]' },
+                    { v: cl.total_nodes, l: 'Nodes', c: 'text-white' },
+                  ].map(({ v, l, c }) => (
+                    <div key={l}>
+                      <div className={`text-base font-bold tabular-nums ${c}`} style={{ fontFamily: 'Red Hat Display' }}>{v ?? 0}</div>
+                      <div className="text-[8px] text-[#6A6E73] uppercase">{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {cl.total_pods > 0 && (
+                  <div className="h-1.5 flex rounded-full overflow-hidden gap-px">
+                    <div style={{ width: `${((cl.pods_running ?? 0) / cl.total_pods) * 100}%`, backgroundColor: '#3E8635' }} />
+                    <div style={{ width: `${((cl.pods_pending ?? 0) / cl.total_pods) * 100}%`, backgroundColor: '#F0AB00' }} />
+                    <div style={{ width: `${(((cl.pods_failed ?? 0) + (cl.pods_crashloop ?? 0)) / cl.total_pods) * 100}%`, backgroundColor: '#C9190B' }} />
+                  </div>
+                )}
+                {cl.total_events_warning > 0 && (
+                  <div className="text-[10px] text-[#F0AB00] mt-2">{cl.total_events_warning} warning events</div>
+                )}
+                <div className="text-[10px] text-[#0071C5] mt-1">Click for namespace detail →</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ============================================================ */}
+      {/*  3. Signal Funnel — compact horizontal bar                    */}
       {/* ============================================================ */}
       <div className="border border-[#333] rounded-xl p-4">
         <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
@@ -392,126 +456,68 @@ export default function FleetOverview() {
       </div>
 
       {/* ============================================================ */}
-      {/*  5. Recent Signals — last 10                                  */}
+      {/*  5. Recent Signals — paginated                                */}
       {/* ============================================================ */}
-      <div className="border border-[#333] rounded-xl p-4">
-        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
-          Recent Signals
-        </div>
-        {signals === null ? (
-          <div className="animate-pulse space-y-2">
-            {[1,2,3].map(i => (
-              <div key={i} className="bg-[#212121] rounded-lg h-8" />
-            ))}
-          </div>
-        ) : recentSignals.length === 0 ? (
-          <div className="text-sm text-[#6A6E73]">Monitoring active &mdash; waiting for signals</div>
-        ) : (
-          <div className="space-y-1">
-            {recentSignals.map((sig) => (
-              <div
-                key={sig.signal_id ?? `${sig.cluster}-${sig.timestamp}-${sig.signal_type}`}
-                className="flex items-center gap-3 bg-[#1a1a1a] rounded-lg px-3 py-2 text-xs cursor-pointer hover:bg-[#252525]"
-                onClick={() => navigate(`/cluster/${sig.cluster}`)}
-              >
-                {/* Severity badge */}
-                <span
-                  className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
-                  style={{
-                    color: sevColor(sig.severity),
-                    backgroundColor: `${sevColor(sig.severity)}20`,
-                  }}
-                >
-                  {sig.severity}
-                </span>
-
-                {/* Signal type */}
-                <span className="text-white font-medium truncate max-w-[160px]">
-                  {sig.signal_type}
-                </span>
-
-                {/* Namespace */}
-                <span className="text-[#9CA3AF] truncate max-w-[120px]">
-                  {sig.namespace}
-                </span>
-
-                {/* Cluster */}
-                <span className="text-[#6A6E73] truncate max-w-[120px]">
-                  {sig.cluster}
-                </span>
-
-                {/* Timestamp */}
-                <span className="text-[#6A6E73] ml-auto whitespace-nowrap">
-                  {sig.timestamp ? relativeTime(sig.timestamp) : '—'}
-                </span>
+      {(() => {
+        const totalSignals = recentSignals.length;
+        const totalPages = Math.max(1, Math.ceil(totalSignals / SIGNALS_PER_PAGE));
+        const page = Math.min(signalPage, totalPages - 1);
+        const pageSignals = recentSignals.slice(page * SIGNALS_PER_PAGE, (page + 1) * SIGNALS_PER_PAGE);
+        return (
+          <div className="border border-[#333] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">
+                Recent Signals {totalSignals > 0 && <span className="text-white">({totalSignals})</span>}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ============================================================ */}
-      {/*  Cluster cards (clickable navigation)                         */}
-      {/* ============================================================ */}
-      <div className="border border-[#333] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">Clusters</div>
-        </div>
-        {clusters === null ? (
-          <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="bg-[#212121] rounded-lg h-28" />
-            ))}
-          </div>
-        ) : clusters.length === 0 ? (
-          <div className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-5 text-center">
-            <div className="text-sm text-[#6A6E73]">
-              No clusters connected &mdash; configure <code className="text-xs bg-[#1a1a1a] px-1.5 py-0.5 rounded text-white">CLUSTER_1_*</code> env vars
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setSignalPage(Math.max(0, page - 1))} disabled={page === 0}
+                    className="px-2 py-0.5 rounded text-xs font-bold bg-[#212121] text-[#6A6E73] hover:text-white disabled:opacity-30">
+                    ‹
+                  </button>
+                  <span className="text-xs text-[#6A6E73] tabular-nums">{page + 1} / {totalPages}</span>
+                  <button onClick={() => setSignalPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
+                    className="px-2 py-0.5 rounded text-xs font-bold bg-[#212121] text-[#6A6E73] hover:text-white disabled:opacity-30">
+                    ›
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {clusters.map((cl) => (
-              <div
-                key={cl.cluster_id}
-                className="bg-[#212121] border border-[#2e2e2e] rounded-lg p-4 cursor-pointer hover:border-[#555] transition-colors"
-                onClick={() => navigate(`/cluster/${cl.cluster_id}`)}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-semibold text-white">{cl.cluster_id}</span>
-                  <span className="text-[10px] text-[#6A6E73]">{cl.last_scan ? relativeTime(cl.last_scan) : ''}</span>
-                </div>
-                <div className="grid grid-cols-5 gap-2 text-center mb-3">
-                  {[
-                    { v: cl.total_pods, l: 'Pods', c: 'text-white' },
-                    { v: cl.pods_running, l: 'Running', c: 'text-[#3E8635]' },
-                    { v: cl.pods_pending, l: 'Pending', c: 'text-[#F0AB00]' },
-                    { v: cl.pods_crashloop, l: 'Crash', c: 'text-[#C9190B]' },
-                    { v: cl.total_nodes, l: 'Nodes', c: 'text-white' },
-                  ].map(({ v, l, c }) => (
-                    <div key={l}>
-                      <div className={`text-base font-bold tabular-nums ${c}`} style={{ fontFamily: 'Red Hat Display' }}>{v ?? 0}</div>
-                      <div className="text-[8px] text-[#6A6E73] uppercase">{l}</div>
-                    </div>
-                  ))}
-                </div>
-                {/* Pod health bar */}
-                {cl.total_pods > 0 && (
-                  <div className="h-1.5 flex rounded-full overflow-hidden gap-px">
-                    <div style={{ width: `${((cl.pods_running ?? 0) / cl.total_pods) * 100}%`, backgroundColor: '#3E8635' }} />
-                    <div style={{ width: `${((cl.pods_pending ?? 0) / cl.total_pods) * 100}%`, backgroundColor: '#F0AB00' }} />
-                    <div style={{ width: `${(((cl.pods_failed ?? 0) + (cl.pods_crashloop ?? 0)) / cl.total_pods) * 100}%`, backgroundColor: '#C9190B' }} />
-                  </div>
-                )}
-                {cl.total_events_warning > 0 && (
-                  <div className="text-[10px] text-[#F0AB00] mt-2">{cl.total_events_warning} warning events</div>
-                )}
-                <div className="text-[10px] text-[#0071C5] mt-1">Click for namespace detail →</div>
+            {signals === null ? (
+              <div className="animate-pulse space-y-2">
+                {[1,2,3].map(i => (
+                  <div key={i} className="bg-[#212121] rounded-lg h-8" />
+                ))}
               </div>
-            ))}
+            ) : recentSignals.length === 0 ? (
+              <div className="text-sm text-[#6A6E73]">Monitoring active &mdash; waiting for signals</div>
+            ) : (
+              <div className="space-y-1">
+                {pageSignals.map((sig) => (
+                  <div
+                    key={sig.signal_id ?? `${sig.cluster}-${sig.timestamp}-${sig.signal_type}`}
+                    className="flex items-center gap-3 bg-[#1a1a1a] rounded-lg px-3 py-2 text-xs cursor-pointer hover:bg-[#252525]"
+                    onClick={() => navigate(`/cluster/${sig.cluster}`)}
+                  >
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                      style={{ color: sevColor(sig.severity), backgroundColor: `${sevColor(sig.severity)}20` }}
+                    >
+                      {sig.severity}
+                    </span>
+                    <span className="text-white font-medium truncate max-w-[160px]">{sig.signal_type}</span>
+                    <span className="text-[#9CA3AF] truncate max-w-[120px]">{sig.namespace}</span>
+                    <span className="text-[#6A6E73] truncate max-w-[120px]">{sig.cluster}</span>
+                    <span className="text-[#6A6E73] ml-auto whitespace-nowrap">
+                      {sig.timestamp ? relativeTime(sig.timestamp) : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
     </div>
   );
 }
