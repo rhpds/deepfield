@@ -1,73 +1,57 @@
-# React + TypeScript + Vite
+# DeepField Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + TypeScript + Tailwind CSS 4 + Vite 8 dashboard for DeepField signal intelligence.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev     # http://localhost:3100, proxies /api to backend
+npm run build   # Production build → dist/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The production build is copied to `backend/static/` and served by the FastAPI backend.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Pages
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+12 pages in 3 nav groups (Monitor / Pipeline / Quality):
+
+| Page | File | Route | Polls |
+|------|------|-------|-------|
+| Fleet Overview | `FleetOverview.tsx` | `/` | 10s |
+| Incidents | `Incidents.tsx` | `/incidents` | 10s |
+| Live Flow | `LiveFlow.tsx` | `/live` | SSE stream |
+| Agents | `SignalPipeline.tsx` | `/pipeline` | 5s (workers), 10s (agents) |
+| LLM Models | `LLMObservatory.tsx` | `/llm` | 10s |
+| Rubrics | `Tuning.tsx` | `/tuning` | 30s |
+| Scenarios | `Scenarios.tsx` | `/scenarios` | — |
+| Replay | `Replay.tsx` | `/replay` | 5s (list), 3s (detail) |
+| Cluster Detail | `ClusterDetail.tsx` | `/cluster/:id` | 10s |
+| Simulator | `LivePanel.tsx` | `/simulator` | — |
+
+## Shared Components
+
+| Component | Purpose |
+|-----------|---------|
+| `HeroMetric` | Large centered metric display |
+| `PressureGauge` | Vertical gauge with zones |
+| `FunnelChart` | Horizontal bar funnel |
+| `MetricsTimeline` | Tabular metrics over time |
+| `ModelTable` | Model stats table |
+| `TimeRangeContext` | Global time-range state + picker |
+
+## Patterns
+
+**Styling:** Tailwind utility classes with dark theme. Cards: `bg-[#212121] border border-[#2e2e2e] rounded-lg p-4`. Sections: `border border-[#333] rounded-xl p-4`. Headers: `text-xs text-[#6A6E73] uppercase tracking-wider font-bold`.
+
+**Colors:** `#3E8635` (healthy/green), `#F0AB00` (warning/amber), `#C9190B` (failing/red), `#6A6E73` (muted), `#0071C5` (primary/blue).
+
+**Data fetching:** `useEffect` + `setInterval` + cancelled flag. No react-query for polling.
+
+**Charts:** recharts 3.8 (LineChart, BarChart) with dark theme overrides: `stroke="#333"` grid, `fill="#6A6E73"` tick text, tooltip `bg-[#1a1a1a] border border-[#333]`.
+
+## Adding a New Page
+
+1. Create `src/pages/YourPage.tsx`
+2. In `App.tsx`: import it, add to a nav group's `items` array, add a `<Route>` element
+3. Follow the polling pattern from an existing page (e.g., `Tuning.tsx` for 30s polling)
