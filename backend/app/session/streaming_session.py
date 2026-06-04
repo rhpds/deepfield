@@ -311,6 +311,15 @@ class StreamingSession:
                 splunk_collectors.append(sc)
         self._splunk_collectors = splunk_collectors
 
+        # AlertManager collector (local cluster monitoring stack, polls every 2 min)
+        am_collector = None
+        try:
+            from app.collectors.alertmanager import AlertManagerCollector
+            am_collector = AlertManagerCollector()
+            am_collector.start_watching()
+        except Exception as e:
+            logger.warning("AlertManager collector init failed: %s", e)
+
         last_rescan = time.monotonic()
         rescan_interval = self.scan_interval
 
@@ -325,6 +334,10 @@ class StreamingSession:
                 for sig in signals:
                     self._signal_queue.append(sig)
 
+            if am_collector:
+                for sig in am_collector.drain_signals():
+                    self._signal_queue.append(sig)
+
             if time.monotonic() - last_rescan >= rescan_interval:
                 for c in collectors:
                     c.rescan()
@@ -337,6 +350,8 @@ class StreamingSession:
             c.stop()
         for sc in splunk_collectors:
             sc.stop()
+        if am_collector:
+            am_collector.stop()
 
     def _sync_infra_counts(self):
         """Pull current infra counts from collectors and reset cluster stats."""

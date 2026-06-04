@@ -68,6 +68,10 @@ SEVERITY_MAP = {
     "event_normal": "info",
     "event_killing": "low",
     "event_preempting": "low",
+    # AlertManager alerts
+    "alert_critical": "critical",
+    "alert_warning": "medium",
+    "alert_info": "info",
     # Splunk alerts
     "splunk_critical_alert": "critical",
     "splunk_high_alert": "high",
@@ -87,7 +91,8 @@ def _extract_evidence(raw: RawSignal) -> dict:
                      "message", "count", "image", "container", "app", "owner", "node",
                      "exit_code", "exit_reason", "exit_message",
                      "schedule_reason", "schedule_message", "phase",
-                     "search_name", "search_query", "triggered_count", "description"):
+                     "search_name", "search_query", "triggered_count", "description",
+                     "alertname", "summary", "starts_at"):
             if key in raw.raw_payload:
                 evidence[key] = raw.raw_payload[key]
     return evidence
