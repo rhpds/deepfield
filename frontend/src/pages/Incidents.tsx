@@ -171,6 +171,80 @@ export default function Incidents() {
         ))}
       </div>
 
+      {/* Incident Timeline */}
+      {incidents.length > 0 && (() => {
+        const now = Date.now();
+        const windowMs = { '5m': 5, '15m': 15, '1h': 60, '6h': 360, '24h': 1440, '7d': 10080 }[range.key] ?? 60;
+        const windowStart = now - windowMs * 60000;
+        const timelineSlots = 24;
+        const slotMs = (windowMs * 60000) / timelineSlots;
+
+        const slots = Array.from({ length: timelineSlots }, (_, i) => {
+          const slotStart = windowStart + i * slotMs;
+          const slotEnd = slotStart + slotMs;
+          let worst = 0;
+          let count = 0;
+          for (const inc of incidents) {
+            const first = new Date(inc.first_seen).getTime();
+            const last = new Date(inc.last_seen).getTime();
+            if (last >= slotStart && first <= slotEnd) {
+              count++;
+              worst = Math.max(worst, SEV_RANK[inc.severity] ?? 0);
+            }
+          }
+          return { worst, count, time: new Date(slotStart) };
+        });
+
+        const worstColor = (rank: number) =>
+          rank >= 4 ? '#C9190B' : rank >= 3 ? '#EE0000' : rank >= 2 ? '#F0AB00' : rank >= 1 ? '#0071C5' : '#2e2e2e';
+
+        // Failure class distribution
+        const classCounts: Record<string, number> = {};
+        for (const inc of incidents) {
+          const fc = inc.failure_class || 'unclassified';
+          classCounts[fc] = (classCounts[fc] || 0) + 1;
+        }
+        const classSorted = Object.entries(classCounts).sort(([, a], [, b]) => b - a);
+        const CLASS_COLORS: Record<string, string> = {
+          config_error: '#F0AB00', image_issue: '#0071C5', oom_kill: '#C9190B',
+          resource_exhaustion: '#EE0000', probe_failure: '#F0AB00', job_failure: '#6A6E73',
+          scheduling_issue: '#0071C5', dependency_failure: '#EE0000', network_issue: '#0071C5',
+          unclassified: '#333', unknown: '#333',
+        };
+
+        return (
+          <div className="border border-[#333] rounded-xl p-4">
+            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">Incident Timeline</div>
+            <div className="flex items-end gap-px h-10 mb-1">
+              {slots.map((s, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center justify-end h-full"
+                  title={`${s.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${s.count} incident${s.count !== 1 ? 's' : ''}`}>
+                  <div className="w-full rounded-t" style={{
+                    height: s.count > 0 ? `${Math.max(20, Math.min(100, s.count * 25))}%` : '4px',
+                    backgroundColor: worstColor(s.worst),
+                  }} />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between text-[8px] text-[#6A6E73] mb-3">
+              <span>{slots[0]?.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span>{slots[Math.floor(timelineSlots / 2)]?.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span>now</span>
+            </div>
+            {/* Failure class breakdown */}
+            <div className="flex flex-wrap gap-3">
+              {classSorted.map(([fc, count]) => (
+                <div key={fc} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CLASS_COLORS[fc] || '#6A6E73' }} />
+                  <span className="text-[10px] text-[#6A6E73]">{fc.replace(/_/g, ' ')}</span>
+                  <span className="text-[10px] text-white font-bold tabular-nums">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Incident list */}
       {loading ? (
         <div className="animate-pulse space-y-4">

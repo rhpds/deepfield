@@ -174,6 +174,27 @@ export default function FleetOverview() {
   const microModels = modelEntries.filter(([name]) => isMicroModel(name));
   const macroModels = modelEntries.filter(([name]) => !isMicroModel(name));
 
+  /* Cross-cluster patterns — same signal type appearing on 2+ clusters */
+  const crossCluster = (() => {
+    const allSigs = signals ?? [];
+    const byType: Record<string, Set<string>> = {};
+    for (const s of allSigs) {
+      if (!s.cluster || s.severity === 'info') continue;
+      if (!byType[s.signal_type]) byType[s.signal_type] = new Set();
+      byType[s.signal_type].add(s.cluster);
+    }
+    return Object.entries(byType)
+      .filter(([, clusters]) => clusters.size >= 2)
+      .map(([type, clusters]) => ({
+        type,
+        clusters: Array.from(clusters),
+        count: allSigs.filter(s => s.signal_type === type).length,
+        severity: allSigs.find(s => s.signal_type === type)?.severity ?? 'medium',
+      }))
+      .sort((a, b) => b.clusters.length - a.clusters.length)
+      .slice(0, 8);
+  })();
+
   /* Recent signals — from observatory or windowed metrics fallback */
   const obsSignals = signals ?? [];
   const wmSignals = ((wm?.recent_signals ?? []) as ObsSignal[]);
@@ -344,6 +365,37 @@ export default function FleetOverview() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/*  Cross-Cluster Patterns                                       */}
+      {/* ============================================================ */}
+      {crossCluster.length > 0 && (
+        <div className="border border-[#333] rounded-xl p-4">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+            Cross-Cluster Patterns <span className="text-[#C9190B]">({crossCluster.length})</span>
+          </div>
+          <div className="space-y-2">
+            {crossCluster.map(p => (
+              <div key={p.type} className="flex items-center gap-3 bg-[#1a1a1a] rounded-lg px-3 py-2">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                  style={{ color: sevColor(p.severity), backgroundColor: `${sevColor(p.severity)}20` }}>
+                  {p.severity}
+                </span>
+                <span className="text-xs text-white font-medium">{p.type}</span>
+                <div className="flex gap-1 ml-auto">
+                  {p.clusters.map(c => (
+                    <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-[#212121] text-[#6A6E73] cursor-pointer hover:text-white"
+                      onClick={() => navigate(`/cluster/${c}`)}>
+                      {c}
+                    </span>
+                  ))}
+                </div>
+                <span className="text-[10px] text-[#6A6E73] tabular-nums">{p.count} signals</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
