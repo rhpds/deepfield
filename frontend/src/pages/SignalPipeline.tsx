@@ -11,6 +11,7 @@ interface AgentStats {
   kept: number;
   dropped: number;
   suppressed: number;
+  deduped: number;
 }
 
 interface AgentDecision {
@@ -143,6 +144,7 @@ export default function SignalPipeline() {
                 kept: a.kept ?? 0,
                 dropped: a.dropped ?? 0,
                 suppressed: a.suppressed ?? a.suppressions ?? 0,
+                deduped: a.deduped ?? 0,
               };
             }
             setAgents(map);
@@ -267,9 +269,25 @@ export default function SignalPipeline() {
                       />
                       <span className="text-sm font-semibold text-white truncate">{name}</span>
                       <span className="text-xs text-[#6A6E73] ml-auto">
-                        {escRate.toFixed(1)}% esc · {agentDecisions.length} decisions
+                        {escRate.toFixed(1)}% esc
+                        {(stats.deduped || 0) > 0 && ` · ${((stats.deduped / stats.total_evaluated) * 100).toFixed(0)}% dedup`}
                       </span>
                     </div>
+                    {/* Decision outcome bar */}
+                    {stats.total_evaluated > 0 && (
+                      <div className="h-2 flex rounded-full overflow-hidden gap-px mb-3">
+                        {[
+                          { v: stats.kept, color: '#3E8635' },
+                          { v: stats.deduped || 0, color: '#0071C5' },
+                          { v: stats.suppressed, color: '#F0AB00' },
+                          { v: stats.dropped, color: '#6A6E73' },
+                          { v: stats.escalated, color: '#EE0000' },
+                        ].map(({ v, color }, i) => {
+                          if (!v) return null;
+                          return <div key={i} style={{ width: `${(v / stats.total_evaluated) * 100}%`, backgroundColor: color, minWidth: '2px' }} />;
+                        })}
+                      </div>
+                    )}
                     <div className="grid grid-cols-5 gap-2 text-center">
                       {[
                         { v: stats.total_evaluated, l: 'Evaluated', c: 'text-white' },

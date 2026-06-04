@@ -140,6 +140,10 @@ export default function FleetOverview() {
   const compressionRatio = (wm?.compression_ratio as number) ?? 0;
   const inFlight = (wm?.inference_in_flight as number) ?? 0;
 
+  /* Severity distribution — from windowed metrics */
+  const sevDist = (wm?.signals_by_severity ?? {}) as Record<string, number>;
+  const sevTotal = Object.values(sevDist).reduce((a, b) => a + b, 0);
+
   /* Funnel values — from windowed /api/v1/metrics endpoint */
   const rawSignals = funnel.raw ?? 0;
   const retained = Math.max(0, funnel.retained ?? 0);
@@ -257,7 +261,14 @@ export default function FleetOverview() {
                 onClick={() => navigate(`/cluster/${cl.cluster_id}`)}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-semibold text-white">{cl.cluster_id}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor:
+                      (cl.pods_crashloop + cl.pods_failed) > 0
+                        ? (cl.pods_crashloop + cl.pods_failed) / Math.max(cl.total_pods, 1) > 0.1 ? '#C9190B' : '#F0AB00'
+                        : '#3E8635'
+                    }} />
+                    <span className="text-sm font-semibold text-white">{cl.cluster_id}</span>
+                  </div>
                   <span className="text-[10px] text-[#6A6E73]">{cl.last_scan ? relativeTime(cl.last_scan) : ''}</span>
                 </div>
                 <div className="grid grid-cols-5 gap-2 text-center mb-3">
@@ -290,6 +301,52 @@ export default function FleetOverview() {
           </div>
         )}
       </div>
+
+      {/* ============================================================ */}
+      {/*  Signal Severity Distribution                                 */}
+      {/* ============================================================ */}
+      {sevTotal > 0 && (
+        <div className="border border-[#333] rounded-xl p-4">
+          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-2">
+            Signal Severity <span className="text-white">({sevTotal.toLocaleString()})</span>
+          </div>
+          <div className="h-3 flex rounded-full overflow-hidden gap-px">
+            {[
+              { key: 'critical', color: '#C9190B' },
+              { key: 'high', color: '#EE0000' },
+              { key: 'medium', color: '#F0AB00' },
+              { key: 'low', color: '#0071C5' },
+              { key: 'info', color: '#6A6E73' },
+            ].map(({ key, color }) => {
+              const count = sevDist[key] || 0;
+              if (count === 0) return null;
+              const pct = (count / sevTotal) * 100;
+              return (
+                <div key={key} title={`${key}: ${count.toLocaleString()}`}
+                  style={{ width: `${pct}%`, backgroundColor: color, minWidth: '2px' }} />
+              );
+            })}
+          </div>
+          <div className="flex gap-4 mt-2">
+            {[
+              { key: 'critical', color: '#C9190B' },
+              { key: 'high', color: '#EE0000' },
+              { key: 'medium', color: '#F0AB00' },
+              { key: 'low', color: '#0071C5' },
+            ].map(({ key, color }) => {
+              const count = sevDist[key] || 0;
+              if (count === 0) return null;
+              return (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="text-[10px] text-[#6A6E73]">{key}</span>
+                  <span className="text-[10px] text-white font-bold tabular-nums">{count.toLocaleString()}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ============================================================ */}
       {/*  3. Signal Funnel — compact horizontal bar                    */}

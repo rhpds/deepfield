@@ -9,6 +9,9 @@ interface ModelStats {
   calls: number;
   avg_latency: number;
   avg_tps: number;
+  total_tokens_in?: number;
+  total_tokens_out?: number;
+  errors?: number;
 }
 
 interface Inference {
@@ -267,7 +270,7 @@ export default function LLMObservatory() {
             const mapped: Record<string, ModelStats> = {};
             for (const [name, stats] of Object.entries(data.models)) {
               const s = stats as Record<string, number>;
-              mapped[name] = { calls: s.total_calls ?? 0, avg_latency: s.avg_latency ?? 0, avg_tps: s.avg_tps ?? 0 };
+              mapped[name] = { calls: s.total_calls ?? 0, avg_latency: s.avg_latency ?? 0, avg_tps: s.avg_tps ?? 0, total_tokens_in: s.total_tokens_in ?? 0, total_tokens_out: s.total_tokens_out ?? 0, errors: s.errors ?? 0 };
             }
             setSseModels(mapped);
           }
@@ -358,13 +361,62 @@ export default function LLMObservatory() {
                   <div className="flex gap-3 mt-2 text-xs tabular-nums">
                     <span className="text-[#6A6E73]">{stats.avg_latency}ms avg</span>
                     <span className="text-orange-400">{stats.avg_tps} tok/s</span>
+                    {(stats.errors ?? 0) > 0 && (
+                      <span className="text-[#C9190B] font-bold">{stats.errors} err</span>
+                    )}
                   </div>
+                  {((stats.total_tokens_in ?? 0) > 0 || (stats.total_tokens_out ?? 0) > 0) && (
+                    <div className="text-[10px] text-[#6A6E73] mt-1 tabular-nums">
+                      {(stats.total_tokens_in ?? 0).toLocaleString()} in · {(stats.total_tokens_out ?? 0).toLocaleString()} out
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* ============================================================ */}
+      {/*  Task Type Distribution                                       */}
+      {/* ============================================================ */}
+      {inferences.length > 0 && (() => {
+        const taskCounts: Record<string, number> = {};
+        for (const inf of inferences) {
+          const tt = String(inf.task_type || 'unknown');
+          taskCounts[tt] = (taskCounts[tt] || 0) + 1;
+        }
+        const sorted = Object.entries(taskCounts).sort(([,a],[,b]) => b - a);
+        const taskTotal = sorted.reduce((s,[,c]) => s + c, 0);
+        const TASK_COLORS: Record<string, string> = {
+          root_cause_analysis: '#EE0000', deep_root_cause_analysis: '#C9190B',
+          classify_signal: '#0071C5', explain_signal: '#3E8635',
+          suggest_remediation: '#F0AB00', cross_cluster_correlation: '#EE0000',
+          summarize_finding: '#6A6E73',
+        };
+        return (
+          <div className="border border-[#333] rounded-xl p-4">
+            <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-2">
+              Inference by Task Type <span className="text-white">({taskTotal})</span>
+            </div>
+            <div className="h-3 flex rounded-full overflow-hidden gap-px mb-2">
+              {sorted.map(([tt, count]) => (
+                <div key={tt} title={`${tt}: ${count}`}
+                  style={{ width: `${(count / taskTotal) * 100}%`, backgroundColor: TASK_COLORS[tt] || '#6A6E73', minWidth: '2px' }} />
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {sorted.map(([tt, count]) => (
+                <div key={tt} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TASK_COLORS[tt] || '#6A6E73' }} />
+                  <span className="text-[10px] text-[#6A6E73]">{tt.replace(/_/g, ' ')}</span>
+                  <span className="text-[10px] text-white font-bold tabular-nums">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ============================================================ */}
       {/*  Hardware Lane Split                                          */}

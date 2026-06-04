@@ -165,12 +165,13 @@ export default function ClusterDetail() {
           {/* ============================================================ */}
           {/*  Health Summary — 4 metric cards                              */}
           {/* ============================================================ */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
               { label: 'Total Pods', value: cluster.total_pods, color: 'text-white' },
               { label: 'Pods Running', value: cluster.pods_running, color: 'text-[#3E8635]' },
-              { label: 'Pods Failed', value: cluster.pods_failed, color: 'text-[#C9190B]' },
+              { label: 'Pods Failed', value: cluster.pods_failed + cluster.pods_crashloop, color: 'text-[#C9190B]' },
               { label: 'Nodes Ready', value: `${cluster.nodes_ready} / ${cluster.total_nodes}`, color: 'text-white' },
+              { label: 'Warning Events', value: cluster.total_events_warning, color: cluster.total_events_warning > 0 ? 'text-[#F0AB00]' : 'text-[#6A6E73]' },
             ].map(({ label, value, color }) => (
               <div
                 key={label}
@@ -251,6 +252,13 @@ export default function ClusterDetail() {
                   .sort(([, a], [, b]) => b - a)
                   .map(([ns, count]) => {
                     const pct = maxNsCount > 0 ? (count / maxNsCount) * 100 : 0;
+                    const nsSigs = (signals ?? []).filter(s => s.namespace === ns);
+                    const worstSev = nsSigs.reduce((worst, s) => {
+                      const rank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+                      return (rank[s.severity] ?? 0) > (rank[worst] ?? 0) ? s.severity : worst;
+                    }, 'info');
+                    const barColor = worstSev === 'critical' || worstSev === 'high' ? '#C9190B'
+                      : worstSev === 'medium' ? '#F0AB00' : '#0071C5';
                     return (
                       <div
                         key={ns}
@@ -264,7 +272,7 @@ export default function ClusterDetail() {
                             className="h-full rounded"
                             style={{
                               width: `${pct}%`,
-                              backgroundColor: '#0071C5',
+                              backgroundColor: barColor,
                             }}
                           />
                         </div>
