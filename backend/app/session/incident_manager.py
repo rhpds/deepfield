@@ -307,10 +307,7 @@ class IncidentManager:
         incidents = list(self._incidents.values())
         if status:
             incidents = [i for i in incidents if i["status"] == status]
-        return sorted(incidents, key=lambda i: (
-            -SEV_RANK.get(i["severity"], 0),
-            i.get("last_seen", ""),
-        ), reverse=False)
+        return sorted(incidents, key=lambda i: i.get("last_seen", ""), reverse=True)
 
     def get_incident(self, incident_id: str) -> Optional[dict]:
         return self._incidents.get(incident_id)
