@@ -34,3 +34,4 @@ kubeconfig*
 *.token
 *-token
 credentials*
+data/
