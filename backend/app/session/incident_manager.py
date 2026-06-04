@@ -110,14 +110,20 @@ class IncidentManager:
         if existing_id and existing_id in self._incidents:
             inc = self._incidents[existing_id]
             if inc["status"] == "open":
-                existing_ids = {s.get("signal_id") for s in inc["evidence"].get("signals", [])}
-                if signal_id not in existing_ids:
+                signals = inc["evidence"].get("signals", [])
+                sig_key = f"{signal_type}:{resource_name}"
+                already_has = any(
+                    f"{s.get('type', '')}:{s.get('resource', '')}" == sig_key
+                    for s in signals
+                )
+                if not already_has and len(signals) < 30:
                     inc["signal_count"] += 1
-                    inc["evidence"].setdefault("signals", []).append({
+                    signals.append({
                         "signal_id": signal_id, "type": signal_type,
                         "namespace": namespace, "resource": resource_name,
                         "severity": severity, "ts": datetime.now(timezone.utc).isoformat(),
                     })
+                    inc["evidence"]["signals"] = signals
                 inc["last_seen"] = datetime.now(timezone.utc).isoformat()
                 if SEV_RANK.get(severity, 0) > SEV_RANK.get(inc["severity"], 0):
                     inc["severity"] = severity
@@ -251,13 +257,16 @@ class IncidentManager:
         inc = self._find_open(namespace, cluster_id)
         if not inc:
             return None
+        inferences = inc["evidence"].get("inferences", [])
+        if len(inferences) >= 5:
+            return inc
         inference_entry = {
             "type": task_type, "model": model,
             "output_summary": output[:2000] if output else "",
             "ts": datetime.now(timezone.utc).isoformat(),
         }
         inc["evidence"]["inferences"].append(inference_entry)
-        if task_type in ("root_cause_analysis", "cross_cluster_correlation"):
+        if task_type in ("root_cause_analysis", "deep_root_cause_analysis", "cross_cluster_correlation"):
             inc["rca_output"] = output
         inc["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._persist(inc)
@@ -269,6 +278,12 @@ class IncidentManager:
         inc = self._find_open(namespace, cluster_id)
         if not inc:
             return None
+        existing = inc["remediation_options"]
+        if len(existing) >= 10:
+            return inc
+        action_normalized = action.strip().lower()
+        if any(r.get("action", "").strip().lower() == action_normalized for r in existing):
+            return inc
         option = {"action": action, "command": command, "risk": risk, "source": source}
         inc["remediation_options"].append(option)
         inc["evidence"]["remediations_suggested"].append(option)
