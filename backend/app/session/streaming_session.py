@@ -366,9 +366,12 @@ class StreamingSession:
         """Pull current infra counts from collectors and reset cluster stats."""
         if not self._collectors:
             return
+        from app.session.signal_store import ClusterStats
         for c in self._collectors:
             counts = c.get_infra_counts()
-            cs = self.store.cluster_stats.get(c.cluster_name)
+            if c.cluster_name not in self.store.cluster_stats:
+                self.store.cluster_stats[c.cluster_name] = ClusterStats(cluster_name=c.cluster_name)
+            cs = self.store.cluster_stats[c.cluster_name]
             if cs:
                 cs.pods_running = counts.get("pods_running", 0)
                 cs.pods_pending = counts.get("pods_pending", 0)
