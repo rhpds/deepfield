@@ -39,7 +39,7 @@ SKIP_ALERTS = {
 
 class AlertManagerCollector:
     def __init__(self, token: str = ""):
-        self.token = token or self._load_sa_token()
+        self.token = token or os.getenv("ALERTMANAGER_TOKEN", "") or self._load_sa_token()
         self._cluster_id = uuid5(NAMESPACE_DNS, "deepfield:alertmanager:local")
         self._signal_buffer: deque = deque(maxlen=500)
         self._stop = threading.Event()
