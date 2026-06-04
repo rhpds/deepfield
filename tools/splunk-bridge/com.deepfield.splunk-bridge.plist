@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.deepfield.splunk-bridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/jkershaw/Documents/deepfield/tools/splunk-bridge/pull_and_push.py</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jkershaw/Documents/deepfield</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/splunk-bridge.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/splunk-bridge.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DEEPFIELD_URL</key>
+        <string>SET_YOUR_DEEPFIELD_URL_HERE</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

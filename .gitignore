@@ -35,3 +35,4 @@ kubeconfig*
 *-token
 credentials*
 data/
+.last_run
