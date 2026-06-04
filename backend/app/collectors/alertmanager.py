@@ -19,7 +19,7 @@ from app.domain.models import RawSignal
 
 logger = logging.getLogger(__name__)
 
-ALERTMANAGER_URL = "https://alertmanager-main.openshift-monitoring.svc:9094"
+THANOS_ALERTS_URL = "https://thanos-querier.openshift-monitoring.svc:9091"
 POLL_INTERVAL = 120
 
 ALERT_SEVERITY_MAP = {
@@ -91,27 +91,31 @@ class AlertManagerCollector:
         try:
             with httpx.Client(timeout=15.0, verify=False) as client:
                 resp = client.get(
-                    f"{ALERTMANAGER_URL}/api/v2/alerts",
-                    params={"active": "true", "silenced": "false", "inhibited": "false"},
+                    f"{THANOS_ALERTS_URL}/api/v1/alerts",
                     headers={"Authorization": f"Bearer {self.token}"},
                 )
                 if resp.status_code != 200:
-                    logger.debug("AlertManager %d", resp.status_code)
+                    logger.debug("Thanos alerts %d", resp.status_code)
                     return
-                alerts = resp.json()
+                data = resp.json()
+                alerts = data.get("data", {}).get("alerts", [])
         except Exception as e:
-            logger.debug("AlertManager fetch failed: %s", str(e)[:80])
+            logger.debug("Thanos alerts fetch failed: %s", str(e)[:80])
             return
 
         self._alert_counts = {"total": 0, "critical": 0, "warning": 0, "info": 0}
         new_count = 0
 
         for alert in alerts:
+            state = alert.get("state", "")
+            if state != "firing":
+                continue
+
             labels = alert.get("labels", {})
             alertname = labels.get("alertname", "")
             severity = labels.get("severity", "warning")
             namespace = labels.get("namespace", "cluster")
-            fingerprint = alert.get("fingerprint", "")
+            fingerprint = f"{alertname}:{namespace}:{severity}"
 
             if alertname in SKIP_ALERTS:
                 continue
@@ -144,7 +148,7 @@ class AlertManagerCollector:
                     "summary": annotations.get("summary", "")[:300],
                     "description": annotations.get("description", "")[:500],
                     "message": annotations.get("message", "")[:300],
-                    "starts_at": alert.get("startsAt", ""),
+                    "active_at": alert.get("activeAt", ""),
                     "labels": {k: v for k, v in labels.items()
                                if k not in ("__name__", "prometheus", "endpoint", "job", "service")},
                 },
@@ -154,4 +158,4 @@ class AlertManagerCollector:
             new_count += 1
 
         if new_count > 0:
-            logger.info("AlertManager: %d active alerts, %d new signals", len(alerts), new_count)
+            logger.info("AlertManager: %d firing alerts, %d new signals", len(alerts), new_count)
