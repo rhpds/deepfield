@@ -185,6 +185,15 @@ class StreamingSession:
         except Exception:
             pass
 
+        # Prometheus enricher — adds resource metrics to findings
+        self._enricher = None
+        if self.source == "live" and self.cluster_configs:
+            try:
+                from app.collectors.prometheus_enricher import PrometheusEnricher
+                self._enricher = PrometheusEnricher(self.cluster_configs)
+            except Exception:
+                pass
+
     @staticmethod
     def _load_totals_from_db() -> dict:
         """Seed cumulative totals from DB so dashboard isn't empty after restart."""
@@ -609,6 +618,21 @@ class StreamingSession:
 
             # Create reasoning tasks from new findings only
             tasks = create_reasoning_tasks(new_findings)
+
+            # Enrich tasks with Prometheus resource metrics before inference
+            if self._enricher and tasks:
+                for task in tasks[:4]:
+                    try:
+                        ns = task.context.get("namespaces", [None])[0] if task.context.get("namespaces") else ""
+                        clusters = task.context.get("clusters", [])
+                        cluster = clusters[0] if clusters else ""
+                        if ns and cluster and len(cluster) > 8:
+                            prom_metrics = self._enricher.enrich_namespace(cluster, ns)
+                            if prom_metrics:
+                                task.context["resource_metrics"] = prom_metrics
+                                task.prompt += f"\n\nResource Metrics (live):\n{prom_metrics}"
+                    except Exception:
+                        pass
 
             # Enqueue inference tasks — dedicated worker thread processes them
             for task in tasks[:4]:
