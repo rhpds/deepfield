@@ -83,6 +83,10 @@ export default function Incidents() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [modal, setModal] = useState<RemediationModal | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterSeverity, setFilterSeverity] = useState<string>('all');
+  const [filterClass, setFilterClass] = useState<string>('all');
+  const [filterCluster, setFilterCluster] = useState<string>('all');
 
   async function handleExecuteClick(command: string, namespace: string, cluster: string) {
     setModal({ command, namespace, cluster, parsed: null, status: 'parsing', result: null });
@@ -147,6 +151,23 @@ export default function Incidents() {
   const withRCA = incidents.filter(i => i.rca_output).length;
   const withRemediation = incidents.filter(i => i.remediation_options.length > 0).length;
 
+  // Derive filter options
+  const allClusters = Array.from(new Set(incidents.map(i => i.cluster_id))).filter(Boolean).sort();
+  const allClasses = Array.from(new Set(incidents.map(i => i.failure_class || 'unclassified'))).sort();
+
+  // Apply filters
+  const filtered = incidents.filter(i => {
+    if (filterSeverity !== 'all' && i.severity !== filterSeverity) return false;
+    if (filterClass !== 'all' && (i.failure_class || 'unclassified') !== filterClass) return false;
+    if (filterCluster !== 'all' && i.cluster_id !== filterCluster) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const haystack = `${i.namespace} ${i.cluster_id} ${i.failure_class || ''} ${i.rca_output || ''} ${i.evidence.signals.map(s => s.type).join(' ')}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
       <div>
@@ -169,6 +190,42 @@ export default function Incidents() {
             <div className="text-[10px] text-[#6A6E73] uppercase tracking-wider mt-1">{label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Search & Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <input type="text" placeholder="Search namespace, cluster, signal type..."
+          value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+          className="bg-[#1a1a1a] border border-[#333] rounded px-3 py-1.5 text-sm text-white placeholder-[#6A6E73] flex-1 min-w-[200px]" />
+        <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}
+          className="bg-[#1a1a1a] border border-[#333] rounded px-3 py-1.5 text-xs text-white">
+          <option value="all">All Severities</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <select value={filterClass} onChange={e => setFilterClass(e.target.value)}
+          className="bg-[#1a1a1a] border border-[#333] rounded px-3 py-1.5 text-xs text-white">
+          <option value="all">All Classes</option>
+          {allClasses.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+        </select>
+        {allClusters.length > 1 && (
+          <select value={filterCluster} onChange={e => setFilterCluster(e.target.value)}
+            className="bg-[#1a1a1a] border border-[#333] rounded px-3 py-1.5 text-xs text-white">
+            <option value="all">All Clusters</option>
+            {allClusters.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        {(searchQuery || filterSeverity !== 'all' || filterClass !== 'all' || filterCluster !== 'all') && (
+          <button onClick={() => { setSearchQuery(''); setFilterSeverity('all'); setFilterClass('all'); setFilterCluster('all'); }}
+            className="px-3 py-1.5 rounded text-xs font-bold bg-[#333] text-[#6A6E73] hover:text-white">
+            Clear
+          </button>
+        )}
+        {filtered.length !== incidents.length && (
+          <span className="text-xs text-[#6A6E73]">{filtered.length} / {incidents.length}</span>
+        )}
       </div>
 
       {/* Incident Timeline */}
@@ -250,11 +307,13 @@ export default function Incidents() {
         <div className="animate-pulse space-y-4">
           {[1, 2, 3].map(i => <div key={i} className="bg-[#212121] rounded-xl h-32" />)}
         </div>
-      ) : incidents.length === 0 ? (
-        <div className="text-center py-12 text-[#6A6E73]">No incidents in this time window</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-[#6A6E73]">
+          {incidents.length === 0 ? 'No incidents in this time window' : 'No incidents match filters'}
+        </div>
       ) : (
         <div className="space-y-4">
-          {incidents.map(inc => {
+          {filtered.map(inc => {
             const isExpanded = expanded === inc.id;
             const sevColor = SEV_COLORS[inc.severity] || '#6A6E73';
             const rca = inc.rca_output ? tryParseJSON(inc.rca_output) : null;

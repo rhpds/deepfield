@@ -32,8 +32,8 @@ class RubricConfig:
     rca_tokens_warning: float = 100.0
     namespaces_healthy: int = 30
     namespaces_warning: int = 10
-    agents_healthy: int = 8
-    agents_warning: int = 4
+    agents_healthy: int = 4
+    agents_warning: int = 2
     signal_types_healthy: int = 10
     signal_types_warning: int = 5
 

@@ -91,7 +91,7 @@ async def evaluate_cluster(cluster_id: str):
     comp_ratio = 0
     dedup_rate = 0
     suppress_rate = 0
-    unique_ft = 1
+    unique_ft = 0
     error_rate = 0
     avg_rca = 0
     avg_micro = 0
@@ -112,12 +112,21 @@ async def evaluate_cluster(cluster_id: str):
         suppress_rate = total_suppress / max(total_decisions, 1)
 
         agent_count = len(store.agent_stats)
-        ns_count = len(store.cluster_stats.get("infra01", {}).namespaces) if store.cluster_stats else 0
+
+        # Count namespaces across ALL clusters
+        all_ns: set = set()
+        for cs in store.cluster_stats.values():
+            if hasattr(cs, 'namespaces'):
+                all_ns.update(cs.namespaces.keys())
+        ns_count = len(all_ns)
         if not ns_count:
             ns_count = len({s.get("namespace", "") for s in store.recent_signals if isinstance(s, dict)})
 
         type_count = len({s.get("signal_type", "") for s in store.recent_signals if isinstance(s, dict)})
         crit_count = sum(1 for s in store.recent_signals if isinstance(s, dict) and s.get("severity") in ("high", "critical"))
+
+        # Count unique finding types from recent findings
+        unique_ft = len({f.get("finding_type", "") for f in store.recent_findings if isinstance(f, dict)})
 
         total_inf = sum(s.total_calls for s in store.model_stats.values())
         total_err = sum(s.errors for s in store.model_stats.values())
@@ -131,10 +140,10 @@ async def evaluate_cluster(cluster_id: str):
             if isinstance(inf, dict):
                 tt = inf.get("task_type", "")
                 tok = inf.get("tokens_out", 0) or 0
-                if tt == "root_cause_analysis":
+                if tt in ("root_cause_analysis", "deep_root_cause_analysis", "cross_cluster_correlation"):
                     rca_calls += 1
                     rca_tokens += tok
-                elif tt in ("classify_signal", "explain_signal", "summarize_finding"):
+                elif tt in ("classify_signal", "explain_signal", "summarize_finding", "suggest_remediation"):
                     micro_calls += 1
                     micro_tokens += tok
         avg_rca = rca_tokens / max(rca_calls, 1)
