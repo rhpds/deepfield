@@ -141,7 +141,7 @@ class OpenShiftCollector:
 
     def _k8s_get(self, path: str, params: Optional[dict] = None) -> Optional[dict]:
         try:
-            with httpx.Client(timeout=10.0, verify=False) as client:
+            with httpx.Client(timeout=30.0, verify=False) as client:
                 resp = client.get(
                     f"{self.api_url}{path}",
                     headers={"Authorization": f"Bearer {self.token}"},
@@ -181,10 +181,18 @@ class OpenShiftCollector:
         if data:
             for item in data.get("items", []):
                 self._process_pod(item)
+        data = self._k8s_get("/api/v1/nodes")
+        if data:
+            for item in data.get("items", []):
+                self._process_node(item)
         data = self._k8s_get("/api/v1/events", {"fieldSelector": "type=Warning"})
         if data:
             for item in data.get("items", []):
                 self._process_event(item)
+        with self._infra_lock:
+            logger.info("Rescan %s: pods=%d nodes=%d",
+                        self.cluster_name, self._infra_counts.get("pods_running", 0),
+                        self._infra_counts.get("nodes_ready", 0))
 
     def _watch_resource(self, resource: str, path: str):
         while not self._stop.is_set():
