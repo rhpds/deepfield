@@ -24,8 +24,8 @@ except ImportError:
 SPLUNK_URL = "https://splunk-api.corp.redhat.com:8089"
 ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 
-SUMMIT_START = "2026-05-05T00:00:00"
-SUMMIT_END = "2026-05-08T23:59:59"
+SUMMIT_START = "05/05/2026:00:00:00"
+SUMMIT_END = "05/09/2026:00:00:00"
 
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "summit-2026" / "splunk"
 
