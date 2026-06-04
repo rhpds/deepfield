@@ -6,10 +6,11 @@ import importlib
 from app.domain.models import FilterDecision, NormalizedSignal
 
 AGENT_MODULES = [
-    # Stage 1: Filter duplicates and noise FIRST
+    # Stage 1: Noise filtering
     "app.nanoagents.dedupe",
     "app.nanoagents.transient_suppressor",
-    # Stage 2: Classify surviving signals
+    "app.nanoagents.infra_noise",
+    # Stage 2: Infrastructure classification
     "app.nanoagents.failure_classifier",
     "app.nanoagents.event_classifier",
     "app.nanoagents.pod_health",
@@ -21,6 +22,12 @@ AGENT_MODULES = [
     "app.nanoagents.kafka_lag",
     "app.nanoagents.launchpad_session",
     "app.nanoagents.stargate_evaluation",
+    # Stage 3: Application / cross-domain classification
+    "app.nanoagents.app_log",
+    "app.nanoagents.alert_agent",
+    "app.nanoagents.security_audit",
+    "app.nanoagents.provisioning",
+    "app.nanoagents.network",
 ]
 
 
