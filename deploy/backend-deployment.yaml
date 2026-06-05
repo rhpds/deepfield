@@ -1,3 +1,4 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,36 +22,41 @@ spec:
       securityContext:
         runAsNonRoot: true
       containers:
-        - name: backend
-          image: image-registry.openshift-image-registry.svc:5000/deepfield/deepfield-backend:latest
-          ports:
-            - containerPort: 8099
-          envFrom:
-            - secretRef:
-                name: deepfield-secrets
-          env:
-            - name: THANOS_URL
-              valueFrom:
-                secretKeyRef:
-                  name: deepfield-secrets
-                  key: THANOS_URL
-                  optional: true
-          resources:
-            requests:
-              cpu: 750m
-              memory: 3Gi
-            limits:
-              cpu: "2"
-              memory: 6Gi
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8099
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8099
-            initialDelaySeconds: 15
-            periodSeconds: 30
+      - name: backend
+        image: image-registry.openshift-image-registry.svc:5000/deepfield/deepfield-backend:latest
+        ports:
+        - containerPort: 8099
+        envFrom:
+        - secretRef:
+            name: deepfield-secrets
+        env:
+        - name: THANOS_URL
+          valueFrom:
+            secretKeyRef:
+              name: deepfield-secrets
+              key: THANOS_URL
+              optional: true
+        resources:
+          requests:
+            cpu: 750m
+            memory: 3Gi
+          limits:
+            cpu: '2'
+            memory: 6Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8099
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8099
+          initialDelaySeconds: 15
+          periodSeconds: 30
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL

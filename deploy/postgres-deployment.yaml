@@ -1,3 +1,4 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,39 +22,47 @@ spec:
       securityContext:
         runAsNonRoot: true
       containers:
-        - name: postgres
-          image: registry.redhat.io/rhel9/postgresql-16:latest
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRESQL_USER
-              valueFrom:
-                secretKeyRef:
-                  name: deepfield-secrets
-                  key: POSTGRES_USER
-            - name: POSTGRESQL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: deepfield-secrets
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRESQL_DATABASE
-              value: deepfield
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/pgsql/data
-          resources:
-            requests:
-              cpu: 250m
-              memory: 1Gi
-            limits:
-              cpu: "1"
-              memory: 2Gi
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "deepfield"]
-            initialDelaySeconds: 10
-            periodSeconds: 10
-      volumes:
+      - name: postgres
+        image: registry.redhat.io/rhel9/postgresql-16:latest
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: deepfield-secrets
+              key: POSTGRES_USER
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: deepfield-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRESQL_DATABASE
+          value: deepfield
+        volumeMounts:
         - name: data
-          persistentVolumeClaim:
-            claimName: deepfield-postgres-data
+          mountPath: /var/lib/pgsql/data
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            cpu: '1'
+            memory: 2Gi
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - deepfield
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: deepfield-postgres-data
