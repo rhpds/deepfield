@@ -81,6 +81,10 @@ async def get_agents(window: Optional[str] = Query(None)):
             f"SELECT * FROM decisions WHERE created_at >= NOW() - INTERVAL '{interval}' "
             f"ORDER BY created_at DESC LIMIT 50"
         )
+        # Always include in-memory decisions as fallback
+        store = _get_store()
+        if not decisions and store:
+            decisions = store.get_recent_decisions(50)
         if agents:
             return {"agents": agents, "recent_decisions": decisions}
 
