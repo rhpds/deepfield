@@ -90,6 +90,20 @@ def publish_raw_signal(signal_dict: dict) -> None:
     publish_to_kafka(PIPELINE_TOPICS["raw"], signal_dict, key=ns)
 
 
+def publish_raw_signal_async(signal_dict: dict) -> None:
+    """Fire-and-forget publish — never blocks the caller. Drops silently on failure."""
+    if not KAFKA_BOOTSTRAP:
+        return
+    producer = _get_producer()
+    if not producer:
+        return
+    try:
+        ns = signal_dict.get("namespace", "unknown")
+        producer.send(PIPELINE_TOPICS["raw"], value=signal_dict, key=ns)
+    except Exception:
+        pass
+
+
 def publish_filtered_signal(signal_dict: dict) -> None:
     """Publish a kept/escalated signal after nano-agent processing."""
     ns = signal_dict.get("namespace", "unknown")

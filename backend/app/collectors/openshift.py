@@ -80,8 +80,21 @@ class OpenShiftCollector:
         )
 
     def _buffer_signal(self, signal: RawSignal):
-        """Buffer signal locally. Kafka dual-write disabled — blocks when Kafka is down."""
+        """Buffer signal locally and publish to Kafka (non-blocking, fire-and-forget)."""
         self._signal_buffer.append(signal)
+        try:
+            from app.integrations.kafka_publisher import publish_raw_signal_async
+            publish_raw_signal_async({
+                "signal_id": str(signal.signal_id),
+                "cluster_id": str(signal.cluster_id),
+                "namespace": signal.namespace,
+                "resource_kind": signal.resource_kind,
+                "resource_name": signal.resource_name,
+                "source": signal.source,
+                "signal_type": signal.signal_type,
+            })
+        except Exception:
+            pass
 
     def start_watching(self):
         """Start watch threads for each resource type."""
