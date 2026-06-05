@@ -136,7 +136,9 @@ def _writer_loop():
 
     import time as _time
     _last_retention = _time.monotonic()
+    _last_mv_refresh = _time.monotonic()
     _RETENTION_INTERVAL = 3600
+    _MV_REFRESH_INTERVAL = 300
 
     while not _writer_stop.is_set():
         batch = []
@@ -153,7 +155,53 @@ def _writer_loop():
             _run_retention_sync(_db_url)
             _last_retention = _time.monotonic()
 
+        if _time.monotonic() - _last_mv_refresh >= _MV_REFRESH_INTERVAL:
+            _refresh_materialized_views_sync(_db_url)
+            _last_mv_refresh = _time.monotonic()
+
         _writer_stop.wait(0.2)
+
+
+def _refresh_materialized_views_sync(db_url: str):
+    """Refresh pre-computed metrics views for dashboard performance."""
+    import asyncio, asyncpg
+
+    async def _do():
+        try:
+            conn = await asyncpg.connect(db_url)
+            try:
+                for window, interval in [("15m", "15 minutes"), ("1h", "1 hour"), ("24h", "24 hours")]:
+                    try:
+                        await conn.execute(f"""
+                            INSERT INTO mv_metrics_funnel (window_label, total_signals, high_severity, medium_severity,
+                                total_decisions, total_findings, total_inferences, compression_ratio, updated_at)
+                            VALUES ('{window}',
+                                COALESCE((SELECT count(*) FROM signals WHERE captured_at >= now() - interval '{interval}'), 0),
+                                COALESCE((SELECT count(*) FROM signals WHERE captured_at >= now() - interval '{interval}' AND severity = 'high'), 0),
+                                COALESCE((SELECT count(*) FROM signals WHERE captured_at >= now() - interval '{interval}' AND severity = 'medium'), 0),
+                                COALESCE((SELECT count(*) FROM decisions WHERE captured_at >= now() - interval '{interval}'), 0),
+                                COALESCE((SELECT count(*) FROM findings WHERE captured_at >= now() - interval '{interval}'), 0),
+                                COALESCE((SELECT count(*) FROM inferences WHERE captured_at >= now() - interval '{interval}'), 0),
+                                0, now())
+                            ON CONFLICT (window_label) DO UPDATE SET
+                                total_signals = EXCLUDED.total_signals, high_severity = EXCLUDED.high_severity,
+                                medium_severity = EXCLUDED.medium_severity, total_decisions = EXCLUDED.total_decisions,
+                                total_findings = EXCLUDED.total_findings, total_inferences = EXCLUDED.total_inferences,
+                                updated_at = EXCLUDED.updated_at
+                        """)
+                    except Exception:
+                        pass
+                logger.info("Materialized views refreshed")
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.debug("MV refresh failed: %s", str(e)[:100])
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_do())
+    finally:
+        loop.close()
 
 
 def _run_retention_sync(db_url: str):
