@@ -12,13 +12,13 @@ postgres_image: "registry.redhat.io/rhel9/postgresql-16:latest"
 
 # Replicas & resources
 deepfield_replicas: 1
-deepfield_cpu_request: "500m"
-deepfield_memory_limit: "1Gi"
+deepfield_cpu_request: "750m"
+deepfield_memory_limit: "6Gi"
 
 # Database
 deploy_database: true
 postgres_user: deepfield
-postgres_storage_size: "10Gi"
+postgres_storage_size: "50Gi"
 
 # Inference (LiteLLM/MAAS)
 litellm_api_base: ""
