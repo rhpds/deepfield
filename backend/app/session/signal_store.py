@@ -143,7 +143,7 @@ class SignalStore:
     def add_decision(self, decision_dict: dict):
         decision_dict["_ts"] = datetime.now(timezone.utc).isoformat()
         outcome = decision_dict.get("outcome", "")
-        if outcome != "dedupe":
+        if outcome not in ("dedupe", "suppress"):
             self.recent_decisions.append(decision_dict)
         if outcome in ("escalate", "suppress", "dedupe", "enrich"):
             from app.db import enqueue_write
