@@ -15,7 +15,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _pool = None
-_write_queue: deque = deque(maxlen=50000)
+_write_queue: deque = deque(maxlen=100000)
 _writer_thread: Optional[threading.Thread] = None
 _writer_stop = threading.Event()
 
@@ -107,8 +107,8 @@ def enqueue_write(table: str, data: dict):
         logger.warning("Rejected write to unknown table: %s", table)
         return
     qlen = len(_write_queue)
-    if qlen > 40000:
-        logger.warning("Write queue near capacity: %d/50000", qlen)
+    if qlen > 80000:
+        logger.warning("Write queue near capacity: %d/100000", qlen)
     _write_queue.append((table, data))
 
 
@@ -140,7 +140,7 @@ def _writer_loop():
 
     while not _writer_stop.is_set():
         batch = []
-        while _write_queue and len(batch) < 200:
+        while _write_queue and len(batch) < 2000:
             try:
                 batch.append(_write_queue.popleft())
             except IndexError:
@@ -153,7 +153,7 @@ def _writer_loop():
             _run_retention_sync(_db_url)
             _last_retention = _time.monotonic()
 
-        _writer_stop.wait(0.5)
+        _writer_stop.wait(0.2)
 
 
 def _run_retention_sync(db_url: str):
@@ -217,30 +217,50 @@ def _flush_batch_sync(batch: list, db_url: str):
 
                 import re
                 _COL_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
+                upsert_tables = {"cluster_profiles": "cluster_id", "incidents": "id"}
 
                 for table, rows in by_table.items():
                     if table not in _ALLOWED_TABLES:
                         continue
-                    for row in rows:
-                        cols = list(row.keys())
-                        if not all(_COL_RE.match(c) for c in cols):
-                            logger.warning("Rejected row with invalid column names: %s", cols)
-                            continue
-                        vals = [_coerce_value(c, row[c]) for c in cols]
-                        placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+
+                    cols = list(rows[0].keys())
+                    if not all(_COL_RE.match(c) for c in cols):
+                        logger.warning("Rejected batch with invalid column names: %s", cols)
+                        continue
+
+                    if table in upsert_tables:
+                        pk = upsert_tables[table]
+                        for row in rows:
+                            vals = [_coerce_value(c, row.get(c)) for c in cols]
+                            placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+                            col_names = ", ".join(cols)
+                            update_cols = [c for c in cols if c != pk]
+                            update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                            sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) ON CONFLICT ({pk}) DO UPDATE SET {update_set}"
+                            try:
+                                await conn.execute(sql, *vals)
+                            except Exception as e:
+                                logger.warning("DB upsert %s failed: %s", table, str(e)[:150])
+                    else:
                         col_names = ", ".join(cols)
-                        try:
-                            upsert_tables = {"cluster_profiles": "cluster_id", "incidents": "id"}
-                            if table in upsert_tables:
-                                pk = upsert_tables[table]
-                                update_cols = [c for c in cols if c != pk]
-                                update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
-                                sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) ON CONFLICT ({pk}) DO UPDATE SET {update_set}"
-                            else:
-                                sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
-                            await conn.execute(sql, *vals)
-                        except Exception as e:
-                            logger.warning("DB insert %s failed: %s", table, str(e)[:150])
+                        placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+                        sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
+                        prepared_rows = []
+                        for row in rows:
+                            try:
+                                prepared_rows.append(tuple(_coerce_value(c, row.get(c)) for c in cols))
+                            except Exception as e:
+                                logger.warning("DB row prep %s failed: %s", table, str(e)[:100])
+                        if prepared_rows:
+                            try:
+                                await conn.executemany(sql, prepared_rows)
+                            except Exception as e:
+                                logger.warning("DB batch insert %s (%d rows) failed: %s — falling back to individual", table, len(prepared_rows), str(e)[:150])
+                                for vals in prepared_rows:
+                                    try:
+                                        await conn.execute(sql, *vals)
+                                    except Exception:
+                                        pass
             finally:
                 await conn.close()
         except Exception as e:
