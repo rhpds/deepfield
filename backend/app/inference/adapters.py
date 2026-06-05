@@ -5,6 +5,7 @@ the LiteLLM proxy which handles routing, auth, retries, and load balancing.
 """
 
 import os
+import threading
 import time
 import httpx
 
@@ -13,6 +14,8 @@ from app.inference.client import InferenceResponse
 LITELLM_URL = os.getenv("LITELLM_API_BASE", "")
 LITELLM_KEY = os.getenv("LITELLM_API_KEY", "")
 SSL_VERIFY = os.getenv("SSL_VERIFY", "false").lower() == "true"
+_MAX_CONCURRENT_LLM = int(os.getenv("MAX_CONCURRENT_LLM_CALLS", "4"))
+_llm_semaphore = threading.Semaphore(_MAX_CONCURRENT_LLM)
 
 # All models routed through LiteLLM proxy
 LITELLM_MODELS = {
@@ -89,38 +92,49 @@ class RealInferenceClient:
             "stream": False,
         }
 
-        t0 = time.monotonic()
-        try:
-            with httpx.Client(timeout=httpx.Timeout(connect=10, read=45, write=10, pool=10), verify=SSL_VERIFY) as client:
-                resp = client.post(
-                    f"{LITELLM_URL}/v1/chat/completions",
-                    json=payload,
-                    headers={"Authorization": f"Bearer {self.litellm_key}"},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-        except Exception as e:
-            elapsed = (time.monotonic() - t0) * 1000
+        if not _llm_semaphore.acquire(timeout=30):
             return InferenceResponse(
-                model_name=model, hardware_lane=cfg["hardware_lane"],
+                model_name=model, hardware_lane=cfg.get("lane", "unknown"),
                 status="error", output="", tokens_in=0, tokens_out=0,
-                latency_ms=round(elapsed, 2), ttft_ms=0, tokens_per_second=0,
-                error=str(e),
+                latency_ms=0, ttft_ms=0, tokens_per_second=0,
+                error="Rate limited — too many concurrent LLM calls",
             )
 
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        usage = data.get("usage", {})
-        tokens_in = usage.get("prompt_tokens", 0)
-        tokens_out = usage.get("completion_tokens", 0)
-        output_text = ""
-        choices = data.get("choices", [])
-        if choices:
-            output_text = choices[0].get("message", {}).get("content", "")
-        tps = (tokens_out / (elapsed_ms / 1000)) if elapsed_ms > 0 else 0
+        t0 = time.monotonic()
+        try:
+            try:
+                with httpx.Client(timeout=httpx.Timeout(connect=10, read=45, write=10, pool=10), verify=SSL_VERIFY) as client:
+                    resp = client.post(
+                        f"{LITELLM_URL}/v1/chat/completions",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {self.litellm_key}"},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+            except Exception as e:
+                elapsed = (time.monotonic() - t0) * 1000
+                return InferenceResponse(
+                    model_name=model, hardware_lane=cfg["hardware_lane"],
+                    status="error", output="", tokens_in=0, tokens_out=0,
+                    latency_ms=round(elapsed, 2), ttft_ms=0, tokens_per_second=0,
+                    error=str(e),
+                )
 
-        return InferenceResponse(
-            model_name=model, hardware_lane=cfg["hardware_lane"], status="success",
-            output=output_text, tokens_in=tokens_in, tokens_out=tokens_out,
-            latency_ms=round(elapsed_ms, 2), ttft_ms=round(elapsed_ms * 0.15, 2),
-            tokens_per_second=round(tps, 2),
-        )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            usage = data.get("usage", {})
+            tokens_in = usage.get("prompt_tokens", 0)
+            tokens_out = usage.get("completion_tokens", 0)
+            output_text = ""
+            choices = data.get("choices", [])
+            if choices:
+                output_text = choices[0].get("message", {}).get("content", "")
+            tps = (tokens_out / (elapsed_ms / 1000)) if elapsed_ms > 0 else 0
+
+            return InferenceResponse(
+                model_name=model, hardware_lane=cfg["hardware_lane"], status="success",
+                output=output_text, tokens_in=tokens_in, tokens_out=tokens_out,
+                latency_ms=round(elapsed_ms, 2), ttft_ms=round(elapsed_ms * 0.15, 2),
+                tokens_per_second=round(tps, 2),
+            )
+        finally:
+            _llm_semaphore.release()

@@ -70,11 +70,17 @@ async def startup():
 
     try:
         from app.workers.manager import start_workers
-        start_workers(
-            client=session.client if session else None,
-            store=session.store if session else None,
-            cluster_profile=session._cluster_profile if session else None,
-        )
+        # Ensure inference worker always has an LLM client, even without a live session
+        client = session.client if session else None
+        store = session.store if session else None
+        profile = session._cluster_profile if session else None
+        if not client:
+            try:
+                from app.inference.adapters import LiteLLMClient
+                client = LiteLLMClient()
+            except Exception:
+                pass
+        start_workers(client=client, store=store, cluster_profile=profile)
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("Kafka workers startup failed: %s", e)
