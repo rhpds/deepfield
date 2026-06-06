@@ -747,10 +747,11 @@ class StreamingSession:
                 if cluster:
                     per_cluster.setdefault(cluster, []).append(s)
 
-            # Build per-namespace decision counts from recent decisions
+            # Build per-namespace decision counts from noise decisions (suppress/dedupe)
             ns_decision_total: dict = {}
             ns_decision_suppressed: dict = {}
-            for d in list(self.store.recent_decisions)[-1000:]:
+            noise_source = list(self.store._noise_decisions)[-1000:] + list(self.store.recent_decisions)[-500:]
+            for d in noise_source:
                 evidence = d.get("evidence", {})
                 ns = evidence.get("namespace", "") if isinstance(evidence, dict) else ""
                 if not ns:

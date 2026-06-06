@@ -56,6 +56,7 @@ class SignalStore:
     def __init__(self, max_signals=10000, max_decisions=5000, max_findings=1000, max_inferences=500):
         self.recent_signals: deque = deque(maxlen=max_signals)
         self.recent_decisions: deque = deque(maxlen=max_decisions)
+        self._noise_decisions: deque = deque(maxlen=max_decisions)
         self.recent_findings: deque = deque(maxlen=max_findings)
         self.recent_inferences: deque = deque(maxlen=max_inferences)
 
@@ -145,6 +146,8 @@ class SignalStore:
         outcome = decision_dict.get("outcome", "")
         if outcome not in ("dedupe", "suppress"):
             self.recent_decisions.append(decision_dict)
+        else:
+            self._noise_decisions.append(decision_dict)
         if outcome in ("escalate", "suppress", "dedupe", "enrich"):
             from app.db import enqueue_write
             enqueue_write("decisions", {
