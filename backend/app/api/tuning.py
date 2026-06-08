@@ -176,7 +176,7 @@ async def evaluate_cluster(cluster_id: str):
         json_compliance_rate=json_rate,
         taxonomy_match_rate=json_rate * 0.9,
         inconsistent_names_rate=max(0, 1 - json_rate) * 0.3,
-        unclassified_rate=0.1,
+        unclassified_rate=1.0 - json_rate if json_total > 0 else 0.0,
         error_rate=error_rate,
         avg_rca_tokens=avg_rca,
         avg_micro_tokens=avg_micro,
