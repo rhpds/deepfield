@@ -663,7 +663,9 @@ class StreamingSession:
                 self.metrics["findings"] = self._window_findings
 
                 raw_sps = self._window_signals / elapsed
-                raw_cr = (self._window_signals / self._window_tasks) if self._window_tasks > 0 else self._ema["compression_ratio"]
+                total_tasks_cum = self.totals.get("reasoning_tasks", 0)
+                total_raw_cum = self.totals.get("raw_signals", 0)
+                raw_cr = (total_raw_cum / total_tasks_cum) if total_tasks_cum > 0 else self._ema["compression_ratio"]
                 raw_tasks = self._window_tasks
                 raw_esc = (self._window_tasks / self._window_signals * 100) if self._window_signals > 0 else 0
 
