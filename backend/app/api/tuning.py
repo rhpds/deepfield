@@ -125,10 +125,10 @@ async def evaluate_cluster(cluster_id: str):
         type_count = len({s.get("signal_type", "") for s in store.recent_signals if isinstance(s, dict)})
         crit_count = sum(1 for s in store.recent_signals if isinstance(s, dict) and s.get("severity") in ("high", "critical"))
 
-        # Count unique finding types from recent findings or totals
+        # Count unique finding types
         unique_ft = len({f.get("finding_type", "") for f in store.recent_findings if isinstance(f, dict)})
-        if unique_ft == 0 and session.totals.get("findings", 0) > 0:
-            unique_ft = 2
+        if unique_ft == 0:
+            unique_ft = min(2, session.totals.get("findings", 0))
 
         total_inf = sum(s.total_calls for s in store.model_stats.values())
         total_err = sum(s.errors for s in store.model_stats.values())
