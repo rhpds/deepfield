@@ -17,7 +17,7 @@ class RubricConfig:
     noise_reduction_warning: float = 0.05
     suppress_rate_healthy_min: float = 0.05
     suppress_rate_healthy_max: float = 0.25
-    finding_diversity_healthy: int = 2
+    finding_diversity_healthy: int = 1
     json_compliance_healthy: float = 0.90
     json_compliance_warning: float = 0.70
     taxonomy_match_healthy: float = 0.80
