@@ -19,6 +19,7 @@ spec:
         app: deepfield
         component: backend
     spec:
+      serviceAccountName: deepfield-oauth
       securityContext:
         runAsNonRoot: true
       containers:
@@ -60,3 +61,55 @@ spec:
           capabilities:
             drop:
             - ALL
+      - name: oauth-proxy
+        image: registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:latest
+        args:
+        - -provider=openshift
+        - -http-address=:8080
+        - -https-address=
+        - -email-domain=*
+        - -upstream=http://localhost:8099/
+        - -client-id=deepfield-oauth-client
+        - -client-secret-file=/etc/proxy/secrets/client-secret
+        - -cookie-secret-file=/etc/proxy/secrets/session_secret
+        - -openshift-service-account=deepfield-oauth
+        - -openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        - -skip-auth-regex=^/(health|api/v1/(health|integration/events))
+        - -upstream-timeout=180s
+        - -pass-user-headers=true
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /oauth/healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /oauth/healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /etc/proxy/secrets
+          name: oauth-proxy-secret
+          readOnly: true
+      volumes:
+      - name: oauth-proxy-secret
+        secret:
+          secretName: deepfield-oauth-secret

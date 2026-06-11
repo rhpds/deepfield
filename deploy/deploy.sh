@@ -58,6 +58,17 @@ oc create secret generic deepfield-secrets \
   --from-literal=CLUSTER_1_TOKEN="${CLUSTER_1_TOKEN}" \
   --dry-run=client -o yaml | oc apply -f -
 
+# OAuth proxy
+echo "Setting up OAuth proxy..."
+oc apply -f "$SCRIPT_DIR/oauth-proxy.yaml"
+OAUTH_SECRET=$(openssl rand -base64 24)
+COOKIE_SECRET=$(openssl rand -hex 32)
+oc create secret generic deepfield-oauth-secret \
+  --namespace=$NAMESPACE \
+  --from-literal=client-secret="$OAUTH_SECRET" \
+  --from-literal=session_secret="$COOKIE_SECRET" \
+  --dry-run=client -o yaml | oc apply -f -
+
 # Config
 echo "Applying configmap..."
 oc apply -f "$SCRIPT_DIR/configmap.yaml"
@@ -89,8 +100,22 @@ oc rollout status deployment/deepfield-postgres -n $NAMESPACE --timeout=120s
 echo "Waiting for backend..."
 oc rollout status deployment/deepfield-backend -n $NAMESPACE --timeout=120s
 
-# Show route
+# Create OAuthClient with correct redirect URI
 ROUTE=$(oc get route deepfield -n $NAMESPACE -o jsonpath='{.spec.host}')
+echo "Creating OAuthClient for https://$ROUTE ..."
+OAUTH_CLIENT_SECRET=$(oc get secret deepfield-oauth-secret -n $NAMESPACE -o jsonpath='{.data.client-secret}' | base64 -d)
+cat <<OAUTHEOF | oc apply -f -
+apiVersion: oauth.openshift.io/v1
+kind: OAuthClient
+metadata:
+  name: deepfield-oauth-client
+grantMethod: auto
+secret: ${OAUTH_CLIENT_SECRET}
+redirectURIs:
+  - https://${ROUTE}/oauth/callback
+OAUTHEOF
+
+# Show route
 echo ""
 echo "========================================="
 echo "DeepField deployed!"

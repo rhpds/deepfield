@@ -10,7 +10,7 @@ spec:
     kind: Service
     name: deepfield-backend
   port:
-    targetPort: 8099
+    targetPort: oauth-proxy
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect

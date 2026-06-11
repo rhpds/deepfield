@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deepfield-oauth
+  namespace: deepfield
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"deepfield"}}'
+---
+# OAuthClient is created dynamically by deploy.sh with the correct redirect URI

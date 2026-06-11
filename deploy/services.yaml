@@ -11,7 +11,12 @@ spec:
     app: deepfield
     component: backend
   ports:
-    - port: 8099
+    - name: oauth-proxy
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: backend
+      port: 8099
       targetPort: 8099
       protocol: TCP
 ---
