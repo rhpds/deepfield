@@ -34,6 +34,14 @@ interface ProfileData {
   model_health: Record<string, { calls: number; errors: number; error_rate: number; avg_latency: number }>;
 }
 
+interface FeedbackSummary {
+  window: string;
+  by_model: Record<string, { up: number; down: number; total: number; approval_rate: number }>;
+  by_task_type: Record<string, { up: number; down: number; total: number; approval_rate: number }>;
+  by_target_type: Record<string, { up: number; down: number; total: number; approval_rate: number }>;
+  negative_comments: Array<{ incident_id: string; target_type: string; model: string; task_type: string; comment: string; created_at: string }>;
+}
+
 interface HistoryEntry {
   timestamp: string;
   overall: string;
@@ -77,6 +85,7 @@ export default function Tuning() {
   const [loading, setLoading] = useState(true);
   const [clusters, setClusters] = useState<string[]>([]);
   const [selectedCluster, setSelectedCluster] = useState('infra01');
+  const [feedbackSummary, setFeedbackSummary] = useState<FeedbackSummary | null>(null);
 
   useEffect(() => {
     fetch('/api/v1/tuning/clusters').then(r => r.ok ? r.json() : null).then(d => {
@@ -92,17 +101,19 @@ export default function Tuning() {
     async function load() {
       try {
         const c = selectedCluster;
-        const [evalRes, propRes, profRes, histRes] = await Promise.all([
+        const [evalRes, propRes, profRes, histRes, fbRes] = await Promise.all([
           fetch(`/api/v1/tuning/evaluate/${c}`),
           fetch('/api/v1/tuning/proposals'),
           fetch(`/api/v1/tuning/profile/${c}`),
           fetch(`/api/v1/tuning/evaluate/${c}/history`),
+          fetch('/api/v1/feedback/summary?window=7d'),
         ]);
         if (cancelled) return;
         if (evalRes.ok) setEvaluation(await evalRes.json());
         if (propRes.ok) { const d = await propRes.json(); setProposals(d.proposals || []); }
         if (profRes.ok) setProfile(await profRes.json());
         if (histRes.ok) setHistory(await histRes.json());
+        if (fbRes.ok) setFeedbackSummary(await fbRes.json());
       } catch { /* */ }
       if (!cancelled) setLoading(false);
     }
@@ -395,6 +406,84 @@ export default function Tuning() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Human Feedback */}
+      <div className="border border-[#333] rounded-xl p-4">
+        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-3">
+          Human Feedback — LLM Output Quality
+        </div>
+        {!feedbackSummary || Object.keys(feedbackSummary.by_model).length === 0 ? (
+          <p className="text-sm text-[#6A6E73]">No feedback submitted yet — rate LLM outputs on the Incidents page to populate this section</p>
+        ) : (
+          <div className="space-y-4">
+            {/* By Model */}
+            <div>
+              <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Approval Rate by Model</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Object.entries(feedbackSummary.by_model).map(([model, stats]) => (
+                  <div key={model} className="bg-[#1a1a1a] rounded-lg p-3">
+                    <div className="text-xs text-[#6A6E73] truncate mb-1">{model.replace(/_/g, ' ')}</div>
+                    <div className="text-xl font-bold tabular-nums" style={{
+                      color: stats.approval_rate >= 0.8 ? '#3E8635' : stats.approval_rate >= 0.5 ? '#F0AB00' : '#C9190B',
+                      fontFamily: 'Red Hat Display',
+                    }}>
+                      {(stats.approval_rate * 100).toFixed(0)}%
+                    </div>
+                    <div className="flex gap-2 mt-1 text-[10px] text-[#6A6E73]">
+                      <span>{stats.up} up</span>
+                      <span>{stats.down} down</span>
+                      <span>{stats.total} total</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* By Task Type */}
+            {Object.keys(feedbackSummary.by_task_type).length > 0 && (
+              <div>
+                <div className="text-[10px] text-[#6A6E73] uppercase mb-2">Approval Rate by Task Type</div>
+                <div className="space-y-1">
+                  {Object.entries(feedbackSummary.by_task_type).map(([taskType, stats]) => (
+                    <div key={taskType} className="flex items-center gap-3 text-xs">
+                      <span className="text-[#6A6E73] w-40 truncate">{taskType.replace(/_/g, ' ')}</span>
+                      <div className="flex-1 h-3 bg-[#1a1a1a] rounded overflow-hidden flex">
+                        <div className="h-full bg-[#3E8635]" style={{ width: `${stats.approval_rate * 100}%` }} />
+                        <div className="h-full bg-[#C9190B]" style={{ width: `${(1 - stats.approval_rate) * 100}%` }} />
+                      </div>
+                      <span className="text-white font-bold tabular-nums w-12 text-right">{(stats.approval_rate * 100).toFixed(0)}%</span>
+                      <span className="text-[#6A6E73] tabular-nums w-16 text-right">{stats.total} ratings</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Negative Comments */}
+            {feedbackSummary.negative_comments.length > 0 && (
+              <div>
+                <div className="text-[10px] text-[#6A6E73] uppercase mb-2">
+                  Recent Negative Feedback ({feedbackSummary.negative_comments.length})
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {feedbackSummary.negative_comments.map((fb, i) => (
+                    <div key={i} className="bg-[#1a1a1a] rounded px-3 py-2 text-xs border-l-2 border-[#C9190B]">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[#C9190B] font-bold">{fb.target_type}</span>
+                        <span className="text-[#6A6E73]">{fb.model || '—'}</span>
+                        <span className="text-[#6A6E73]">{fb.task_type.replace(/_/g, ' ')}</span>
+                        <span className="text-[#6A6E73] ml-auto">{fb.created_at ? new Date(fb.created_at).toLocaleDateString() : ''}</span>
+                      </div>
+                      <p className="text-[#e0e0e0]">{fb.comment}</p>
+                      <span className="text-[10px] text-[#6A6E73] font-mono mt-1 block">incident: {fb.incident_id.slice(0, 8)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

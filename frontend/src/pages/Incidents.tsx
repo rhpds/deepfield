@@ -87,6 +87,80 @@ export default function Incidents() {
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [filterClass, setFilterClass] = useState<string>('all');
   const [filterCluster, setFilterCluster] = useState<string>('all');
+  const [feedbackState, setFeedbackState] = useState<Record<string, { rating: string; submitted: boolean }>>({});
+  const [commentFor, setCommentFor] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+
+  async function loadFeedback(incidentId: string) {
+    try {
+      const resp = await fetch(`/api/v1/feedback?incident_id=${incidentId}`);
+      const data = await resp.json();
+      const state: Record<string, { rating: string; submitted: boolean }> = {};
+      for (const fb of data.feedback || []) {
+        const key = `${fb.incident_id}:${fb.target_type}:${fb.target_index}`;
+        if (!state[key]) state[key] = { rating: fb.rating, submitted: true };
+      }
+      setFeedbackState(prev => ({ ...prev, ...state }));
+    } catch { /* non-critical */ }
+  }
+
+  async function submitFeedback(
+    incidentId: string, targetType: string, targetIndex: number,
+    rating: string, comment: string, model: string, taskType: string,
+  ) {
+    const key = `${incidentId}:${targetType}:${targetIndex}`;
+    try {
+      await fetch('/api/v1/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          incident_id: incidentId, target_type: targetType,
+          target_index: targetIndex, rating, comment, model, task_type: taskType,
+        }),
+      });
+      setFeedbackState(prev => ({ ...prev, [key]: { rating, submitted: true } }));
+      setCommentFor(null);
+      setCommentText('');
+    } catch { /* non-critical */ }
+  }
+
+  function FeedbackButtons({ incidentId, targetType, targetIndex, model, taskType }:
+    { incidentId: string; targetType: string; targetIndex: number; model: string; taskType: string }) {
+    const key = `${incidentId}:${targetType}:${targetIndex}`;
+    const state = feedbackState[key];
+    const isCommenting = commentFor === key;
+
+    if (state?.submitted) {
+      return (
+        <span className="text-[10px] text-[#6A6E73] flex items-center gap-1 shrink-0">
+          {state.rating === 'up' ? '▲' : '▼'} Feedback recorded
+        </span>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={(e) => { e.stopPropagation(); submitFeedback(incidentId, targetType, targetIndex, 'up', '', model, taskType); }}
+          className="px-1.5 py-0.5 rounded text-[10px] bg-[#212121] text-[#6A6E73] hover:text-[#3E8635] hover:bg-[#3E8635]/20 transition"
+          title="Helpful">{'▲'}</button>
+        <button onClick={(e) => { e.stopPropagation(); if (isCommenting) { setCommentFor(null); setCommentText(''); } else { setCommentFor(key); setCommentText(''); } }}
+          className="px-1.5 py-0.5 rounded text-[10px] bg-[#212121] text-[#6A6E73] hover:text-[#C9190B] hover:bg-[#C9190B]/20 transition"
+          title="Not helpful">{'▼'}</button>
+        {isCommenting && (
+          <div className="flex items-center gap-1 ml-1" onClick={e => e.stopPropagation()}>
+            <input type="text" placeholder="What was wrong?" value={commentText}
+              onChange={e => setCommentText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitFeedback(incidentId, targetType, targetIndex, 'down', commentText, model, taskType); }}
+              className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-0.5 text-[10px] text-white placeholder-[#6A6E73] w-48" />
+            <button onClick={() => submitFeedback(incidentId, targetType, targetIndex, 'down', commentText, model, taskType)}
+              className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#C9190B]/20 text-[#C9190B] hover:bg-[#C9190B]/40 transition">
+              Send
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   async function handleExecuteClick(command: string, namespace: string, cluster: string) {
     setModal({ command, namespace, cluster, parsed: null, status: 'parsing', result: null });
@@ -325,7 +399,7 @@ export default function Incidents() {
 
                 {/* Header — always visible, rich preview */}
                 <div className="p-5 cursor-pointer hover:bg-[#1a1a1a] transition-colors"
-                  onClick={() => setExpanded(isExpanded ? null : inc.id)}>
+                  onClick={() => { const next = isExpanded ? null : inc.id; setExpanded(next); if (next) loadFeedback(next); }}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-bold px-2 py-1 rounded" style={{ backgroundColor: `${sevColor}20`, color: sevColor }}>
@@ -425,7 +499,12 @@ export default function Incidents() {
                     {/* RCA */}
                     {rca && (
                       <div>
-                        <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold mb-2">Root Cause Analysis</div>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs text-[#6A6E73] uppercase tracking-wider font-bold">Root Cause Analysis</div>
+                          <FeedbackButtons incidentId={inc.id} targetType="rca" targetIndex={0}
+                            model={inc.evidence.inferences.find(i => i.type.includes('root_cause'))?.model || ''}
+                            taskType="root_cause_analysis" />
+                        </div>
                         <div className="bg-[#1a1a1a] rounded-lg p-4 space-y-3">
                           <div>
                             <span className="text-[10px] text-[#6A6E73] uppercase">Root Cause</span>
@@ -477,6 +556,8 @@ export default function Incidents() {
                                 )}
                               </div>
                               <span className="text-[10px] text-[#6A6E73]">{rem.source}</span>
+                              <FeedbackButtons incidentId={inc.id} targetType="remediation" targetIndex={i}
+                                model="" taskType="suggest_remediation" />
                               {canExecute && rem.command && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleExecuteClick(rem.command!, inc.namespace, inc.cluster_id); }}
@@ -507,6 +588,8 @@ export default function Incidents() {
                                   <span className="text-white font-medium">{inf.type.replace(/_/g, ' ')}</span>
                                   <span className="text-[#6A6E73]">{inf.model}</span>
                                   <span className="text-[#6A6E73] ml-auto">{inf.ts ? relativeTime(inf.ts) : ''}</span>
+                                  <FeedbackButtons incidentId={inc.id} targetType="inference" targetIndex={i}
+                                    model={inf.model} taskType={inf.type} />
                                 </div>
                                 <p className="text-[#a0a0a0] whitespace-pre-wrap">{displayText}</p>
                               </div>

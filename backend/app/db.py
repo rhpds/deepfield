@@ -98,6 +98,7 @@ _ALLOWED_TABLES = frozenset({
     "signals", "decisions", "findings", "inferences", "remediations",
     "agent_stats_snapshots", "session_snapshots", "metrics_snapshots",
     "cluster_profiles", "rubric_evaluations", "incidents",
+    "feedback",
 })
 
 

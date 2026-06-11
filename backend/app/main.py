@@ -21,6 +21,7 @@ from app.api.tuning import router as tuning_router
 from app.api.incidents import router as incidents_router
 from app.api.scenarios import router as scenarios_router
 from app.api.workers import router as workers_router
+from app.api.feedback import router as feedback_router
 
 app = FastAPI(
     title="DeepField",
@@ -50,6 +51,7 @@ app.include_router(tuning_router)
 app.include_router(incidents_router)
 app.include_router(scenarios_router)
 app.include_router(workers_router)
+app.include_router(feedback_router)
 
 
 @app.on_event("startup")
