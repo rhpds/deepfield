@@ -56,21 +56,23 @@ app.include_router(feedback_router)
 
 @app.on_event("startup")
 async def startup():
+    import logging
+    _log = logging.getLogger(__name__)
+
     from app.db import init_db
     try:
         await init_db()
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("DB init failed (continuing): %s", e)
 
     from app.api.session import start_live_monitoring
-    import logging
-    _log = logging.getLogger(__name__)
+    _log.warning("STARTUP: calling start_live_monitoring...")
     try:
         session = start_live_monitoring()
-        _log.info("Live monitoring started: session=%s", session.session_id[:8] if session else "None")
+        _log.warning("STARTUP: session=%s status=%s", session.session_id[:8] if session else "None", getattr(session, 'status', '?'))
     except Exception as e:
         session = None
-        _log.warning("Live monitoring startup failed: %s", e, exc_info=True)
+        _log.error("STARTUP: live monitoring FAILED: %s", e, exc_info=True)
 
     try:
         from app.workers.manager import start_workers

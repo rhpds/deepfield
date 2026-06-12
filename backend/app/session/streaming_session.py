@@ -396,6 +396,11 @@ class StreamingSession:
                 cs.total_pods = cs.pods_running + cs.pods_pending + cs.pods_crashloop + cs.pods_failed
                 cs.total_nodes = cs.nodes_ready + cs.nodes_pressure
                 cs.total_events_warning = 0
+        logger.info("Synced infra counts for %d clusters (first: %s pods=%d nodes=%d)",
+                     len(self._collectors),
+                     self._collectors[0].cluster_name if self._collectors else "?",
+                     self.store.cluster_stats.get(self._collectors[0].cluster_name, ClusterStats(cluster_name="?")).pods_running if self._collectors else 0,
+                     self.store.cluster_stats.get(self._collectors[0].cluster_name, ClusterStats(cluster_name="?")).nodes_ready if self._collectors else 0)
 
     def _emit_synthetic(self):
         """Continuously generates synthetic signals at the configured rate."""
