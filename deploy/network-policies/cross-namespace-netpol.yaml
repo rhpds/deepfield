@@ -1,0 +1,32 @@
+---
+# stargate namespace must allow ingress from deepfield (DEEPFIELD_STARGATE_URL)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-deepfield
+  namespace: stargate
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: deepfield
+  policyTypes:
+  - Ingress
+---
+# stargate namespace must allow ingress from partner-ai-launchpad
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-launchpad
+  namespace: stargate
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: partner-ai-launchpad
+  policyTypes:
+  - Ingress

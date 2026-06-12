@@ -63,12 +63,14 @@ async def startup():
         pass
 
     from app.api.session import start_live_monitoring
+    import logging
+    _log = logging.getLogger(__name__)
     try:
         session = start_live_monitoring()
+        _log.info("Live monitoring started: session=%s", session.session_id[:8] if session else "None")
     except Exception as e:
         session = None
-        import logging
-        logging.getLogger(__name__).warning("Live monitoring startup failed: %s", e)
+        _log.warning("Live monitoring startup failed: %s", e, exc_info=True)
 
     try:
         from app.workers.manager import start_workers
