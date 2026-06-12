@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml asyncpg \
     "celery[redis]" kafka-python-ng
 
 COPY backend/app/ app/
+COPY backend/migrations/ migrations/
 COPY frontend/dist/ static/
 
 EXPOSE 8099
