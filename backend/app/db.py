@@ -98,7 +98,7 @@ _ALLOWED_TABLES = frozenset({
     "signals", "decisions", "findings", "inferences", "remediations",
     "agent_stats_snapshots", "session_snapshots", "metrics_snapshots",
     "cluster_profiles", "rubric_evaluations", "incidents",
-    "feedback",
+    "feedback", "evidence_bundles",
 })
 
 
@@ -126,7 +126,8 @@ def _start_writer():
 
 _RETENTION_DAYS = int(os.getenv("DB_RETENTION_DAYS", "7"))
 _RETENTION_TABLES = ("signals", "decisions", "inferences", "findings",
-                     "metrics_snapshots", "session_snapshots", "agent_stats_snapshots")
+                     "metrics_snapshots", "session_snapshots", "agent_stats_snapshots",
+                     "evidence_bundles")
 
 
 def _writer_loop():

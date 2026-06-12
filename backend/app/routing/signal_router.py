@@ -81,14 +81,14 @@ def route_signals(signals: List[NormalizedSignal], decisions: List[FilterDecisio
     }
 
 
-def _build_evidence_block(f: CandidateFinding) -> dict:
+def _build_evidence_block(f: CandidateFinding, evidence_bundle: dict = None) -> dict:
     signals = f.evidence.get("signals", [])[:10]
     cluster_names = list({
         s.get("cluster", "") or s.get("evidence", {}).get("source", "").split(":", 1)[-1]
         for s in signals
         if s.get("cluster") or ":" in s.get("evidence", {}).get("source", "")
     }) or [str(c)[:8] for c in f.clusters]
-    return {
+    block = {
         "finding_type": f.finding_type,
         "severity": f.severity,
         "namespaces": f.namespaces,
@@ -96,9 +96,16 @@ def _build_evidence_block(f: CandidateFinding) -> dict:
         "signal_count": len(f.signal_ids),
         "signals": signals,
     }
+    if evidence_bundle:
+        b = evidence_bundle.get("bundle", {})
+        for key in ("events", "pod_statuses", "container_logs", "resource_metrics",
+                     "prior_incidents", "deployments"):
+            if b.get(key):
+                block[key] = b[key]
+    return block
 
 
-def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTask]:
+def create_reasoning_tasks(findings: List[CandidateFinding], evidence_bundles: dict = None) -> List[ReasoningTask]:
     import json
     from app.agents.prompts import (
         RCA_SYSTEM, TRIAGE_SYSTEM, CORRELATION_SYSTEM,
@@ -116,7 +123,8 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
             continue
 
         model = _select_model_for_finding(f)
-        evidence_block = _build_evidence_block(f)
+        eb = (evidence_bundles or {}).get(str(f.finding_id))
+        evidence_block = _build_evidence_block(f, evidence_bundle=eb)
 
         # --- Primary task (deep RCA for critical cross-cluster or high-signal findings) ---
         if f.finding_type == "cross_cluster_correlation":
@@ -148,6 +156,7 @@ def create_reasoning_tasks(findings: List[CandidateFinding]) -> List[ReasoningTa
                 "namespaces": f.namespaces,
                 "clusters": [str(c)[:8] for c in f.clusters],
                 "signals": f.evidence.get("signals", [])[:20],
+                **({"bundle_id": eb["bundle_id"]} if eb else {}),
             },
         ))
 

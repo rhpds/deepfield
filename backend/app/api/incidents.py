@@ -51,6 +51,18 @@ async def resolve_incident(incident_id: str):
     return mgr.resolve_incident(incident_id)
 
 
+@router.get("/{incident_id}/evidence")
+async def get_incident_evidence(incident_id: str):
+    from app import db
+    rows = await db.query(
+        "SELECT id, finding_id, namespace, cluster, bundle, captured_at "
+        "FROM evidence_bundles WHERE incident_id = $1 "
+        "ORDER BY captured_at DESC LIMIT 10",
+        incident_id,
+    )
+    return {"bundles": rows, "count": len(rows)}
+
+
 @router.post("/{incident_id}/suppress", dependencies=[Depends(require_write_access)])
 async def suppress_incident(incident_id: str):
     mgr = _get_manager()

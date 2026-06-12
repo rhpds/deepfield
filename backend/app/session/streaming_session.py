@@ -194,6 +194,9 @@ class StreamingSession:
             except Exception:
                 pass
 
+        # Evidence collector — gathers rich K8s context before inference
+        self._evidence_collector = None
+
     @staticmethod
     def _load_totals_from_db() -> dict:
         """Seed cumulative totals from DB so dashboard isn't empty after restart."""
@@ -301,6 +304,17 @@ class StreamingSession:
             c.start_watching()
             collectors.append(c)
         self._collectors = collectors
+
+        try:
+            from app.evidence.collector import EvidenceCollector
+            from app.api.incidents import get_manager
+            self._evidence_collector = EvidenceCollector(
+                collectors=collectors,
+                enricher=self._enricher,
+                incident_manager=get_manager(),
+            )
+        except Exception as e:
+            logger.warning("Evidence collector init failed: %s", e)
 
         # Splunk collectors (poll-based, separate from K8s watch)
         splunk_collectors = []
@@ -619,23 +633,32 @@ class StreamingSession:
             except Exception as e:
                 logger.error("finding bookkeeping crashed: %s", e, exc_info=True)
 
-            # Create reasoning tasks from new findings only
-            tasks = create_reasoning_tasks(new_findings)
-
-            # Enrich tasks with Prometheus resource metrics before inference
-            if self._enricher and tasks:
-                for task in tasks[:4]:
+            # Collect evidence bundles for new findings before task creation
+            evidence_bundles = {}
+            if self._evidence_collector and new_findings:
+                for f in new_findings[:4]:
                     try:
-                        ns = task.context.get("namespaces", [None])[0] if task.context.get("namespaces") else ""
-                        clusters = task.context.get("clusters", [])
-                        cluster = clusters[0] if clusters else ""
-                        if ns and cluster and len(cluster) > 8:
-                            prom_metrics = self._enricher.enrich_namespace(cluster, ns)
-                            if prom_metrics:
-                                task.context["resource_metrics"] = prom_metrics
-                                task.prompt += f"\n\nResource Metrics (live):\n{prom_metrics}"
-                    except Exception:
-                        pass
+                        eb = self._evidence_collector.collect(f)
+                        evidence_bundles[str(f.finding_id)] = eb
+                        from app.db import enqueue_write
+                        inc = None
+                        try:
+                            from app.api.incidents import get_manager
+                            inc = get_manager()._find_open(eb["namespace"], eb["cluster"])
+                        except Exception:
+                            pass
+                        enqueue_write("evidence_bundles", {
+                            "id": eb["bundle_id"],
+                            "finding_id": eb["finding_id"],
+                            "incident_id": inc["id"] if inc else None,
+                            "namespace": eb["namespace"],
+                            "cluster": eb["cluster"],
+                            "bundle": eb["bundle"],
+                        })
+                    except Exception as e:
+                        logger.warning("Evidence collection failed: %s", e)
+
+            tasks = create_reasoning_tasks(new_findings, evidence_bundles=evidence_bundles)
 
             # Enqueue inference tasks — dedicated worker thread processes them
             for task in tasks[:4]:
@@ -1119,6 +1142,7 @@ class StreamingSession:
                         "latency_ms": 0, "tokens_in": 0, "tokens_out": 0,
                         "severity": task.context.get("severity", ""),
                         "finding_type": task.context.get("finding_type", ""),
+                        "bundle_id": task.context.get("bundle_id"),
                     })
                     self._log_event("macro", "deep_rca_complete", {
                         "model": model, "task_type": task_type,
@@ -1175,6 +1199,7 @@ class StreamingSession:
                     "tokens_in": resp.tokens_in, "tokens_out": resp.tokens_out,
                     "severity": task.context.get("severity", ""),
                     "finding_type": task.context.get("finding_type", ""),
+                    "bundle_id": task.context.get("bundle_id"),
                 })
                 self._log_event(tier, "inference_complete", {
                     "model": model, "task_type": task.task_type,
@@ -1194,6 +1219,7 @@ class StreamingSession:
                     "model": model, "tier": tier, "task_type": task.task_type,
                     "prompt": task.prompt, "output": "", "error": resp.error or "unknown",
                     "latency_ms": round(resp.latency_ms, 1), "tokens_in": 0, "tokens_out": 0,
+                    "bundle_id": task.context.get("bundle_id"),
                 })
                 self._log_event(tier, "inference_error", {
                     "model": model, "error": resp.error[:200] if resp.error else "unknown",

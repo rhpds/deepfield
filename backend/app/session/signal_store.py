@@ -209,6 +209,7 @@ class SignalStore:
             "tokens_out": inference_dict.get("tokens_out", 0),
             "latency_ms": inference_dict.get("latency_ms", 0),
             "error": inference_dict.get("error", ""),
+            "bundle_id": inference_dict.get("bundle_id"),
         })
 
         model = inference_dict.get("model", "unknown")
