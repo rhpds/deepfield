@@ -1,7 +1,7 @@
 id: explain_signal
 version: "1.0"
 description: Human-readable explanation of an escalated signal for frontend display
-model: granite-3-2-8b-instruct
+model: phi3-mini-cpu
 max_tokens: 200
 temperature: 0.3
 system: |

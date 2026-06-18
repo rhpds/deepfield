@@ -1,7 +1,7 @@
 id: remediation
 version: "1.0"
 description: Fix action suggestion — never executes, only suggests
-model: granite-3-2-8b-instruct
+model: qwen3-14b
 max_tokens: 800
 temperature: 0.2
 system: |

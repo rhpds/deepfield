@@ -1,7 +1,7 @@
 id: classify_signal
 version: "2.0"
 description: Classify an unclassified signal into a StarGate failure class
-model: granite-3-2-8b-instruct
+model: granite-2b-cpu
 max_tokens: 200
 temperature: 0.1
 system: |

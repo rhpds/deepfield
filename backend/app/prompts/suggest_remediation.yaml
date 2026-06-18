@@ -1,7 +1,7 @@
 id: suggest_remediation
 version: "1.0"
 description: Quick fix suggestion for medium-severity findings
-model: granite-3-2-8b-instruct
+model: phi3-mini-cpu
 max_tokens: 250
 temperature: 0.2
 system: |

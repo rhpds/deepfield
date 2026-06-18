@@ -1,7 +1,7 @@
 id: incident
 version: "1.0"
 description: Scope and blast radius assessment for correlated incidents
-model: granite-3-2-8b-instruct
+model: qwen25-3b-cpu
 max_tokens: 800
 temperature: 0.1
 system: |

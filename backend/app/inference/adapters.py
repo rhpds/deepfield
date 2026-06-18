@@ -42,20 +42,20 @@ LITELLM_MODELS = {
         "hardware_lane": "xeon6",
     },
     "granite_8b_cpu_xeon": {
-        "litellm_model": "granite-3-2-8b-instruct",
+        "litellm_model": "granite-2b-cpu",
         "hardware_lane": "xeon6",
     },
     # Legacy aliases — keep for compatibility with existing inference records
     "granite_2b_cpu_xeon": {
-        "litellm_model": "granite-4-0-h-tiny",
+        "litellm_model": "granite-2b-cpu",
         "hardware_lane": "xeon6",
     },
     "phi3_mini_cpu_xeon": {
-        "litellm_model": "granite-4-0-h-tiny",
+        "litellm_model": "phi3-mini-cpu",
         "hardware_lane": "xeon6",
     },
     "qwen25_3b_cpu_xeon": {
-        "litellm_model": "granite-3-2-8b-instruct",
+        "litellm_model": "qwen25-3b-cpu",
         "hardware_lane": "xeon6",
     },
 }

@@ -1,7 +1,7 @@
 id: correlate_findings
 version: "1.0"
 description: Semantic correlation between 2+ findings sharing a namespace
-model: granite-3-2-8b-instruct
+model: qwen25-3b-cpu
 max_tokens: 300
 temperature: 0.2
 system: |

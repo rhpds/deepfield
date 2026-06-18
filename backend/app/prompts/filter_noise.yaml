@@ -1,7 +1,7 @@
 id: filter_noise
 version: "1.0"
 description: Second-pass actionability check on low-confidence kept signals
-model: granite-3-2-8b-instruct
+model: granite-2b-cpu
 max_tokens: 150
 temperature: 0.1
 system: |

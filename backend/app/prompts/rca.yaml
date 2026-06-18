@@ -1,7 +1,7 @@
 id: rca
 version: "2.0"
 description: Root cause analysis for high/critical findings with structured remediation
-model: granite-3-2-8b-instruct
+model: qwen3-14b
 max_tokens: 1500
 temperature: 0.1
 system: |
