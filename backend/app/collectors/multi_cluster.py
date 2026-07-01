@@ -3,8 +3,8 @@
 import logging
 from typing import List, Tuple
 
-from app.domain.models import ClusterRef, RawSignal
 from app.collectors.openshift import OpenShiftCollector
+from app.domain.models import ClusterRef, RawSignal
 
 logger = logging.getLogger(__name__)
 

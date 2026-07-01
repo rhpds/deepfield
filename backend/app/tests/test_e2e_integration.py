@@ -6,10 +6,10 @@ Validates signal injection, nano-agent processing, and event publishing.
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.domain.models import NormalizedSignal, FilterDecision
+from app.domain.models import NormalizedSignal
 from app.nanoagents.launchpad_session import filter as launchpad_filter
-from app.nanoagents.stargate_evaluation import filter as stargate_filter
 from app.nanoagents.pipeline import run_pipeline
+from app.nanoagents.stargate_evaluation import filter as stargate_filter
 
 
 class TestLaunchpadSignalProcessing:

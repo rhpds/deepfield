@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime, timezone
-from uuid import UUID
 
 from app.workers.base import KafkaWorker
 
@@ -19,11 +18,11 @@ class NanoAgentWorker(KafkaWorker):
         self._store = store
 
     def process(self, message: dict) -> None:
-        from app.domain.models import RawSignal, NormalizedSignal
-        from app.normalizers.signal_normalizer import normalize_signal
-        from app.nanoagents.pipeline import run_pipeline
-        from app.routing.signal_router import route_signals
+        from app.domain.models import RawSignal
         from app.integrations.kafka_publisher import publish_filtered_signal
+        from app.nanoagents.pipeline import run_pipeline
+        from app.normalizers.signal_normalizer import normalize_signal
+        from app.routing.signal_router import route_signals
 
         raw = RawSignal(
             signal_id=message.get("signal_id", "00000000-0000-0000-0000-000000000000"),

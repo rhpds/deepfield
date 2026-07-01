@@ -9,6 +9,7 @@ X-Forwarded-User is only trusted from TRUSTED_PROXY_HOSTS.
 """
 
 import os
+
 from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 

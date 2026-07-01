@@ -65,8 +65,8 @@ def _load_remote_classes() -> Optional[Dict[str, Dict[str, Any]]]:
         return None
 
     try:
-        import urllib.request
         import json
+        import urllib.request
 
         url = f"{stargate_url.rstrip('/')}/api/failure-classes"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})

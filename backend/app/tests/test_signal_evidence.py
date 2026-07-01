@@ -5,13 +5,12 @@ Tests the full evidence chain: collector → normalizer → correlation → prom
 
 import json
 from datetime import datetime, timezone
-from types import SimpleNamespace
-from uuid import uuid4, uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, uuid4, uuid5
 
-from app.domain.models import RawSignal, NormalizedSignal
-from app.normalizers.signal_normalizer import normalize_signal, _extract_evidence
 from app.correlation.engine import correlate
-from app.routing.signal_router import create_reasoning_tasks, _build_evidence_block
+from app.domain.models import RawSignal
+from app.normalizers.signal_normalizer import _extract_evidence, normalize_signal
+from app.routing.signal_router import _build_evidence_block, create_reasoning_tasks
 
 
 def _raw(signal_type: str, payload: dict, namespace: str = "test-ns") -> RawSignal:

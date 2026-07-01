@@ -1,6 +1,7 @@
 """Incidents API — rich evidence-driven incidents with append semantics."""
 
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 
 from app.auth import require_write_access
@@ -28,7 +29,7 @@ async def list_incidents(status: Optional[str] = Query(None), window: Optional[s
     mgr = _get_manager()
     incidents = mgr.list_incidents(status=status)
     if window:
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         windows = {"5m": 5, "15m": 15, "1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
         minutes = windows.get(window, 60)
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()

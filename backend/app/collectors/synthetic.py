@@ -1,6 +1,6 @@
 """Synthetic collector — wraps SyntheticFleetGenerator as a Collector."""
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from app.domain.models import ClusterRef, RawSignal
 from app.generators.synthetic import SyntheticFleetGenerator

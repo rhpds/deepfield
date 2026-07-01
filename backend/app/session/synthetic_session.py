@@ -1,21 +1,20 @@
 """Synthetic session — lightweight signal generation for Demo and Simulator pages."""
 
-import time
 import threading
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.domain.models import RawSignal
-from app.generators.synthetic import SyntheticFleetGenerator
-from app.normalizers.signal_normalizer import normalize_signal
-from app.nanoagents.pipeline import run_pipeline
 from app.correlation.engine import correlate
-from app.routing.signal_router import route_signals, create_reasoning_tasks
+from app.generators.synthetic import SyntheticFleetGenerator
 from app.inference.client import InferenceClient, MockInferenceClient
 from app.inference.router import resolve_model
+from app.nanoagents.pipeline import run_pipeline
+from app.normalizers.signal_normalizer import normalize_signal
+from app.routing.signal_router import create_reasoning_tasks, route_signals
 
 
 @dataclass

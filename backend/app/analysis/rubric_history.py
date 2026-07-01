@@ -3,7 +3,7 @@
 import logging
 from collections import defaultdict, deque
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 logger = logging.getLogger("deepfield.rubric_history")
 

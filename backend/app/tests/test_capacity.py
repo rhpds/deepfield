@@ -1,11 +1,11 @@
 """Tests for capacity projection."""
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.domain.models import FilterDecision, NormalizedSignal, CandidateFinding, ReasoningTask
-from app.metrics.funnel import compute_funnel
+from app.domain.models import NormalizedSignal, ReasoningTask
 from app.metrics.capacity import compute_capacity_projection
-from datetime import datetime, timezone
+from app.metrics.funnel import compute_funnel
 
 
 def test_capacity_projection_computes_reasoning_compression_ratio():

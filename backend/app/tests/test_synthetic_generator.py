@@ -1,7 +1,7 @@
 """Tests for synthetic fleet generator."""
 
-from app.generators.synthetic import SyntheticFleetGenerator
 from app.generators.signal_types import FAILURE_SIGNALS
+from app.generators.synthetic import SyntheticFleetGenerator
 
 
 def test_synthetic_generator_is_deterministic_by_seed():

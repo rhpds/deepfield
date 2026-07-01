@@ -1,7 +1,7 @@
 """Chains nano-agents into a filter pipeline."""
 
-from typing import List
 import importlib
+from typing import List
 
 from app.domain.models import FilterDecision, NormalizedSignal
 

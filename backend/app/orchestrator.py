@@ -5,18 +5,18 @@ from dataclasses import asdict
 from typing import Optional
 from uuid import uuid4
 
+from app.benchmark.runner import BenchmarkRunner
 from app.collectors.synthetic import SyntheticCollector
-from app.normalizers.signal_normalizer import normalize_batch
-from app.nanoagents.pipeline import run_pipeline
 from app.correlation.engine import correlate
-from app.routing.signal_router import route_signals, create_reasoning_tasks
 from app.inference.client import InferenceClient, MockInferenceClient
 from app.inference.router import resolve_model, resolve_route
-from app.metrics.funnel import compute_funnel
 from app.metrics.capacity import compute_capacity_projection
-from app.benchmark.runner import BenchmarkRunner
-from app.reports.run_report import generate_run_report_json, generate_run_report_md
+from app.metrics.funnel import compute_funnel
+from app.nanoagents.pipeline import run_pipeline
+from app.normalizers.signal_normalizer import normalize_batch
 from app.reports.benchmark_report import generate_benchmark_report_json, generate_benchmark_report_md
+from app.reports.run_report import generate_run_report_json, generate_run_report_md
+from app.routing.signal_router import create_reasoning_tasks, route_signals
 
 
 def run_synthetic(

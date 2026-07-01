@@ -6,10 +6,9 @@ and dedup/suppression thresholds. Profiles persist to DB and reload on startup.
 
 import json
 import logging
-import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, Optional, Set
+from typing import Dict, Set
 
 logger = logging.getLogger("deepfield.profile")
 
@@ -139,7 +138,8 @@ def get_profile(cluster_id: str) -> ClusterProfile:
 
 def load_profiles_from_db():
     """Load persisted profiles on startup."""
-    import os, threading
+    import os
+    import threading
     db_url = os.getenv("DATABASE_URL", "")
     if not db_url:
         return
@@ -147,7 +147,9 @@ def load_profiles_from_db():
 
     def _sync_load():
         try:
-            import asyncio, asyncpg
+            import asyncio
+
+            import asyncpg
             async def _do():
                 conn = await asyncpg.connect(db_url)
                 try:

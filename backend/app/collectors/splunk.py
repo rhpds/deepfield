@@ -7,13 +7,12 @@ Stage 3: Ad-hoc SPL query execution.
 Read-only. Never modifies Splunk state.
 """
 
-import json
 import logging
 import threading
 from collections import deque
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
-from uuid import uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, uuid5
 
 import httpx
 

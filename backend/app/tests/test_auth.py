@@ -1,6 +1,7 @@
 """DeepField auth — TDD."""
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestAuthModule:
@@ -19,8 +20,9 @@ class TestAuthModule:
             require_api_key(request=None, api_key="test-key")
 
     def test_invalid_key_rejected(self):
-        from app.auth import require_api_key
         from fastapi import HTTPException
+
+        from app.auth import require_api_key
         with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
             with pytest.raises(HTTPException):
                 require_api_key(request=MagicMock(headers={}), api_key="wrong")
@@ -34,8 +36,9 @@ class TestAuthModule:
             require_api_key(request=req, api_key="")
 
     def test_oauth_proxy_rejected_from_untrusted_host(self):
-        from app.auth import require_api_key
         from fastapi import HTTPException
+
+        from app.auth import require_api_key
         with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
             req = MagicMock()
             req.headers = {"X-Forwarded-User": "jkershaw@redhat.com"}
@@ -50,8 +53,9 @@ class TestAuthModule:
             require_api_key(request=None, api_key="int-key")
 
     def test_spoofable_headers_rejected(self):
-        from app.auth import require_api_key
         from fastapi import HTTPException
+
+        from app.auth import require_api_key
         with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
             req = MagicMock()
             req.headers = {"sec-fetch-site": "same-origin", "origin": "https://deepfield.example.com"}

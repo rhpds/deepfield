@@ -1,6 +1,5 @@
 """TARSy result consumer — enriches DeepField incidents with TARSy investigation results."""
 
-import json
 import logging
 
 logger = logging.getLogger("deepfield.tarsy")

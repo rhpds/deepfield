@@ -2,10 +2,10 @@
 
 import random
 from typing import List, Optional
-from uuid import uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, uuid5
 
+from app.benchmark.profiles import TASK_PROMPTS, BenchmarkProfile, get_profile
 from app.domain.models import BenchmarkRequest
-from app.benchmark.profiles import BenchmarkProfile, TASK_PROMPTS, get_profile
 
 
 class BenchmarkWorkloadGenerator:

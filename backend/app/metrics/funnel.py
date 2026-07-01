@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import List
 
-from app.domain.models import FilterDecision, NormalizedSignal, CandidateFinding, ReasoningTask
+from app.domain.models import CandidateFinding, FilterDecision, NormalizedSignal, ReasoningTask
 
 
 @dataclass

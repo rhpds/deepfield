@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TimeRangeProvider, TimeRangePicker } from './components/TimeRangeContext';
@@ -6,16 +6,17 @@ import { TimeRangeProvider, TimeRangePicker } from './components/TimeRangeContex
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 2000 } },
 });
-import FleetOverview from './pages/FleetOverview';
-import SignalPipeline from './pages/SignalPipeline';
-import LiveFlow from './pages/LiveFlow';
-import LLMObservatory from './pages/LLMObservatory';
-import ClusterDetail from './pages/ClusterDetail';
-import LivePanel from './pages/LivePanel';
-import Incidents from './pages/Incidents';
-import Tuning from './pages/Tuning';
-import Scenarios from './pages/Scenarios';
-import Replay from './pages/Replay';
+
+const FleetOverview = lazy(() => import('./pages/FleetOverview'));
+const SignalPipeline = lazy(() => import('./pages/SignalPipeline'));
+const LiveFlow = lazy(() => import('./pages/LiveFlow'));
+const LLMObservatory = lazy(() => import('./pages/LLMObservatory'));
+const ClusterDetail = lazy(() => import('./pages/ClusterDetail'));
+const LivePanel = lazy(() => import('./pages/LivePanel'));
+const Incidents = lazy(() => import('./pages/Incidents'));
+const Tuning = lazy(() => import('./pages/Tuning'));
+const Scenarios = lazy(() => import('./pages/Scenarios'));
+const Replay = lazy(() => import('./pages/Replay'));
 
 interface NavGroup {
   label: string;
@@ -124,20 +125,22 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
     <TimeRangeProvider>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<FleetOverview />} />
-          <Route path="/pipeline" element={<SignalPipeline />} />
-          <Route path="/live" element={<LiveFlow />} />
-          <Route path="/llm" element={<LLMObservatory />} />
-          <Route path="/cluster/:id" element={<ClusterDetail />} />
-          <Route path="/incidents" element={<Incidents />} />
-          <Route path="/tuning" element={<Tuning />} />
-          <Route path="/scenarios" element={<Scenarios />} />
-          <Route path="/replay" element={<Replay />} />
-          <Route path="/simulator" element={<LivePanel />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<div className="flex items-center justify-center h-screen" style={{ backgroundColor: 'var(--brand-dark)', color: '#6A6E73' }}>Loading…</div>}>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<FleetOverview />} />
+            <Route path="/pipeline" element={<SignalPipeline />} />
+            <Route path="/live" element={<LiveFlow />} />
+            <Route path="/llm" element={<LLMObservatory />} />
+            <Route path="/cluster/:id" element={<ClusterDetail />} />
+            <Route path="/incidents" element={<Incidents />} />
+            <Route path="/tuning" element={<Tuning />} />
+            <Route path="/scenarios" element={<Scenarios />} />
+            <Route path="/replay" element={<Replay />} />
+            <Route path="/simulator" element={<LivePanel />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </TimeRangeProvider>
     </QueryClientProvider>
   );

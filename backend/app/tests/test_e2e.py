@@ -1,6 +1,6 @@
 """End-to-end integration tests."""
 
-from app.orchestrator import run_synthetic, run_benchmark, run_capacity_projection
+from app.orchestrator import run_benchmark, run_capacity_projection, run_synthetic
 
 
 def test_e2e_synthetic_tiny_completes():
@@ -50,7 +50,7 @@ def test_e2e_synthetic_plus_benchmark_capacity_projection_completes():
     assert projection["max_reasoning_tasks_per_minute"] > 0
     assert projection["avg_signals_per_cluster"] > 0
 
-    print(f"\n--- CAPACITY PROJECTION ---")
+    print("\n--- CAPACITY PROJECTION ---")
     print(f"Compression Ratio: {projection['compression_ratio']:,.1f}:1")
     print(f"Projected Clusters: {projection['projected_clusters_supported']}")
     print(f"Max Reasoning/min: {projection['max_reasoning_tasks_per_minute']:,.1f}")

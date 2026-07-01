@@ -1,9 +1,8 @@
 """Streaming session — continuous signal processing without cycles."""
 
 import logging
-import time
 import threading
-import random
+import time
 from collections import deque
 
 logging.basicConfig(level=logging.INFO)
@@ -22,19 +21,17 @@ def _thread_exception_hook(args):
     )
 
 threading.excepthook = _thread_exception_hook
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.domain.models import RawSignal
-from app.generators.synthetic import SyntheticFleetGenerator
-from app.generators.signal_types import SIGNAL_RESOURCE_KIND
-from app.normalizers.signal_normalizer import normalize_signal
-from app.nanoagents.pipeline import run_pipeline
 from app.correlation.engine import correlate
-from app.routing.signal_router import route_signals, create_reasoning_tasks
+from app.generators.synthetic import SyntheticFleetGenerator
 from app.inference.client import InferenceClient, MockInferenceClient
 from app.inference.router import resolve_model
+from app.nanoagents.pipeline import run_pipeline
+from app.normalizers.signal_normalizer import normalize_signal
+from app.routing.signal_router import create_reasoning_tasks, route_signals
 
 
 @dataclass
@@ -201,7 +198,8 @@ class StreamingSession:
     def _load_totals_from_db() -> dict:
         """Seed cumulative totals from DB so dashboard isn't empty after restart."""
         defaults = {"raw_signals": 0, "reasoning_tasks": 0, "inference_calls": 0, "findings": 0, "dropped": 0, "retained": 0}
-        import os, threading
+        import os
+        import threading
         db_url = os.getenv("DATABASE_URL", "")
         if not db_url:
             return defaults
@@ -210,7 +208,9 @@ class StreamingSession:
 
         def _sync_load():
             try:
-                import asyncio, asyncpg
+                import asyncio
+
+                import asyncpg
                 async def _do():
                     conn = await asyncpg.connect(db_url)
                     try:
@@ -306,8 +306,8 @@ class StreamingSession:
         self._collectors = collectors
 
         try:
-            from app.evidence.collector import EvidenceCollector
             from app.api.incidents import get_manager
+            from app.evidence.collector import EvidenceCollector
             self._evidence_collector = EvidenceCollector(
                 collectors=collectors,
                 enricher=self._enricher,
@@ -843,6 +843,7 @@ class StreamingSession:
         """
         try:
             import json as _json
+
             from app.api.incidents import get_manager
             mgr = get_manager()
 
@@ -1070,7 +1071,8 @@ class StreamingSession:
                     "(previous restarts=%d)",
                     restart_reason, self._process_loop_restarts,
                 )
-                import sys, traceback
+                import sys
+                import traceback
                 for thread_id, frame in sys._current_frames().items():
                     if thread_id != threading.get_ident():
                         stack = "".join(traceback.format_stack(frame))
@@ -1119,8 +1121,8 @@ class StreamingSession:
         # Two-pass deep RCA: runs both macro and micro inference internally
         if task_type == "deep_root_cause_analysis":
             try:
-                from app.inference.deep_rca import run_deep_rca
                 from app.domain.models import CandidateFinding
+                from app.inference.deep_rca import run_deep_rca
                 # Reconstruct a minimal finding from task context for _build_evidence_block
                 finding = CandidateFinding(
                     finding_id=task.finding_id,

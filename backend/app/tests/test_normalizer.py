@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.domain.models import RawSignal
-from app.normalizers.signal_normalizer import normalize_signal, normalize_batch
+from app.normalizers.signal_normalizer import normalize_batch, normalize_signal
 
 
 def test_normalizer_converts_pod_crashloop_to_normalized_signal():

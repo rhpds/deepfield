@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth import require_write_access
-
 from app.domain.models import RawSignal
 from app.generators.signal_types import SIGNAL_RESOURCE_KIND
 

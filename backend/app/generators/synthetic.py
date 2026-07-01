@@ -2,16 +2,14 @@
 
 import random
 from datetime import datetime, timedelta, timezone
-from uuid import UUID, uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from app.domain.models import ClusterRef, RawSignal
 from app.generators.profiles import FleetProfile, get_profile
 from app.generators.signal_types import (
-    FAILURE_SCENARIOS,
     FAILURE_SIGNALS,
     HEALTHY_SIGNALS,
     SIGNAL_RESOURCE_KIND,
-    SIGNAL_WEIGHTS,
     WARNING_SIGNALS,
 )
 

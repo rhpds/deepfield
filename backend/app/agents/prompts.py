@@ -16,8 +16,9 @@ def load_prompt(name: str) -> Dict:
     if name in _prompt_cache:
         return _prompt_cache[name]
     try:
-        import yaml
         import re
+
+        import yaml
         if not re.match(r'^[a-z_][a-z0-9_]*$', name):
             logger.warning("Invalid prompt name rejected: %s", name)
             return {}

@@ -5,8 +5,14 @@ from uuid import uuid4
 
 from app.domain.models import NormalizedSignal
 from app.nanoagents import (
-    pod_health, route_health, pvc_health, node_pressure,
-    namespace_quota, kserve_endpoint, dedupe, transient_suppressor,
+    dedupe,
+    kserve_endpoint,
+    namespace_quota,
+    node_pressure,
+    pod_health,
+    pvc_health,
+    route_health,
+    transient_suppressor,
 )
 
 

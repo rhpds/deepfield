@@ -17,7 +17,7 @@ import time
 
 
 def main():
-    from app.testing.scenario_runner import ScenarioRunner, SCENARIOS
+    from app.testing.scenario_runner import SCENARIOS, ScenarioRunner
 
     if "--list" in sys.argv:
         for sid, s in SCENARIOS.items():
@@ -49,7 +49,7 @@ def main():
         print(f"  Namespace: {s.namespace}")
         print(f"  Inject: {s.inject_type}")
         print(f"  Expected: {s.expected_classification} ({s.expected_severity})")
-        print(f"  Waiting for pipeline (up to 10 min)...")
+        print("  Waiting for pipeline (up to 10 min)...")
 
         start = time.monotonic()
         result = asyncio.run(runner.run_scenario(sid))

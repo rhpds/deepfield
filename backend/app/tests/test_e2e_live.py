@@ -10,8 +10,9 @@ Skip if not available.
 
 import os
 import time
-import pytest
+
 import httpx
+import pytest
 
 DEEPFIELD_URL = os.getenv("DEEPFIELD_URL", "http://localhost:8099")
 INFRA01_TOKEN = os.getenv("INFRA01_TOKEN", "")
@@ -251,6 +252,6 @@ def test_full_evidence_chain(client, live_session):
     assert chain["decisions"] > 0, f"Evidence chain broken at decisions: {chain}"
     assert chain["agents_active"] > 0, f"Evidence chain broken at agents: {chain}"
 
-    print(f"\n=== E2E Evidence Chain ===")
+    print("\n=== E2E Evidence Chain ===")
     for k, v in chain.items():
         print(f"  {k}: {v}")

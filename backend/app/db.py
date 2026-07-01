@@ -4,9 +4,9 @@ Works identically without a database — all queries return empty results.
 When DATABASE_URL is set, connects to PostgreSQL and runs migrations.
 """
 
-import os
 import json
 import logging
+import os
 import threading
 from collections import deque
 from pathlib import Path
@@ -166,7 +166,9 @@ def _writer_loop():
 
 def _refresh_materialized_views_sync(db_url: str):
     """Refresh pre-computed metrics views for dashboard performance."""
-    import asyncio, asyncpg
+    import asyncio
+
+    import asyncpg
 
     async def _do():
         try:
@@ -208,7 +210,9 @@ def _refresh_materialized_views_sync(db_url: str):
 
 def _run_retention_sync(db_url: str):
     """Delete rows older than _RETENTION_DAYS from high-volume tables."""
-    import asyncio, asyncpg
+    import asyncio
+
+    import asyncpg
     async def _do():
         try:
             conn = await asyncpg.connect(db_url)
@@ -255,6 +259,7 @@ def _coerce_value(col: str, val):
 def _flush_batch_sync(batch: list, db_url: str):
     """Synchronous batch write using a dedicated connection per flush."""
     import asyncio
+
     import asyncpg
 
     async def _do_flush():

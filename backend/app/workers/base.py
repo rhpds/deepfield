@@ -4,7 +4,7 @@ import json
 import logging
 import threading
 import time
-from typing import Callable, Optional
+from typing import Optional
 
 logger = logging.getLogger("deepfield.workers")
 

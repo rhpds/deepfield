@@ -1,14 +1,13 @@
 """DeepField run API endpoints."""
 
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 
 from app.auth import require_write_access
-
-from app.orchestrator import run_synthetic, run_benchmark, run_capacity_projection
-from app.inference.client import MockInferenceClient
 from app.benchmark.runner import get_run_progress, list_active_runs
+from app.inference.client import MockInferenceClient
+from app.orchestrator import run_benchmark, run_capacity_projection, run_synthetic
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 
@@ -20,6 +19,7 @@ _prometheus = None
 @router.post("/preflight", dependencies=[Depends(require_write_access)])
 async def preflight_check():
     import asyncio
+
     from app.benchmark.preflight import run_preflight
     return await asyncio.get_event_loop().run_in_executor(None, run_preflight)
 
@@ -27,6 +27,7 @@ async def preflight_check():
 @router.post("/warmup", dependencies=[Depends(require_write_access)])
 async def warmup():
     import asyncio
+
     from app.benchmark.preflight import run_warmup
     return await asyncio.get_event_loop().run_in_executor(None, run_warmup)
 
@@ -152,8 +153,9 @@ async def start_capacity_run(req: CapacityRequest):
             bench_run_id = runner.run_background(req.benchmark_profile)
             _capacity_runs[run_id]["benchmark_run_id"] = bench_run_id
 
-            from app.benchmark.runner import get_run_progress
             import time
+
+            from app.benchmark.runner import get_run_progress
             while True:
                 time.sleep(1)
                 progress = get_run_progress(bench_run_id)

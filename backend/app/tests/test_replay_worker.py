@@ -1,9 +1,7 @@
 """Tests for Kafka replay worker — unit tests without Kafka dependency."""
 
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
-from uuid import uuid4
+from unittest.mock import patch
 
 
 class TestReplayStore:

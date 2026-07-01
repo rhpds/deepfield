@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 from app.domain.models import ReasoningTask
-from app.inference.router import resolve_model, resolve_tier, MACRO_MODELS, MICRO_MODELS
+from app.inference.router import MACRO_MODELS, MICRO_MODELS, resolve_model, resolve_tier
 
 
 def _task(task_type, preference="auto"):

@@ -1,6 +1,6 @@
 """Tests for Splunk collector — signal creation, dedup, drain, severity mapping."""
 
-from app.collectors.splunk import SplunkCollector, SPLUNK_SEVERITY_MAP
+from app.collectors.splunk import SPLUNK_SEVERITY_MAP, SplunkCollector
 
 
 def test_splunk_collector_creates_signals():

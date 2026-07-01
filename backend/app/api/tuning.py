@@ -1,10 +1,11 @@
 """Tuning API — view and manage adaptive tuning proposals and cluster profiles."""
 
-import time
-import threading
 import logging
-from fastapi import APIRouter, Depends, Query
+import threading
+import time
 from typing import Optional
+
+from fastapi import APIRouter, Depends
 
 from app.auth import require_write_access
 

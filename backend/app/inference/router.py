@@ -1,6 +1,5 @@
 """Three-tier inference routing: nano (deterministic) → micro (Xeon 6) → macro (Gaudi 3)."""
 
-from typing import List
 
 from app.domain.models import ReasoningTask
 

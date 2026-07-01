@@ -1,6 +1,7 @@
 """API for Kafka worker consumer stats and replay management."""
 
-from datetime import datetime, timezone
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 
 from app.auth import require_write_access

@@ -1,7 +1,6 @@
 """Kafka consumer: findings → LLM inference → inference results."""
 
 import logging
-from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.workers.base import KafkaWorker
@@ -19,10 +18,10 @@ class InferenceWorker(KafkaWorker):
         self._store = store
 
     def process(self, message: dict) -> None:
-        from app.domain.models import CandidateFinding
-        from app.routing.signal_router import create_reasoning_tasks
-        from app.inference.router import resolve_model
         from app.agents.prompts import load_prompt
+        from app.domain.models import CandidateFinding
+        from app.inference.router import resolve_model
+        from app.routing.signal_router import create_reasoning_tasks
 
         finding = CandidateFinding(
             finding_id=message.get("finding_id", str(uuid4())),
@@ -86,6 +85,7 @@ class InferenceWorker(KafkaWorker):
         try:
             import json as _json
             import re
+
             from app.api.incidents import get_manager
             mgr = get_manager()
 

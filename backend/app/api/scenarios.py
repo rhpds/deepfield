@@ -1,9 +1,10 @@
 """Scenarios API — async synthetic end-to-end pipeline testing."""
 
-import os
-import threading
 import asyncio
 import logging
+import os
+import threading
+
 from fastapi import APIRouter, Depends
 
 from app.auth import require_write_access

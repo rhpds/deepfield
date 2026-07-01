@@ -4,7 +4,6 @@ import logging
 import time
 from collections import deque
 from datetime import datetime, timezone
-from uuid import UUID
 
 from app.workers.base import KafkaWorker
 
@@ -25,8 +24,8 @@ class CorrelationWorker(KafkaWorker):
         self._store = store
 
     def process(self, message: dict) -> None:
-        from app.domain.models import NormalizedSignal
         from app.correlation.engine import correlate
+        from app.domain.models import NormalizedSignal
         from app.integrations.kafka_publisher import publish_finding
 
         sig = NormalizedSignal(

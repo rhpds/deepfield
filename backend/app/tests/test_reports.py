@@ -2,15 +2,15 @@
 
 import json
 
-from app.metrics.funnel import SignalFunnel
-from app.metrics.capacity import CapacityEstimate
 from app.benchmark.metrics import BenchmarkMetrics
-from app.reports.run_report import generate_run_report_json, generate_run_report_md
+from app.metrics.capacity import CapacityEstimate
+from app.metrics.funnel import SignalFunnel
 from app.reports.benchmark_report import (
     generate_benchmark_report_json,
     generate_benchmark_report_md,
     generate_saturation_csv,
 )
+from app.reports.run_report import generate_run_report_json, generate_run_report_md
 
 
 def _funnel():

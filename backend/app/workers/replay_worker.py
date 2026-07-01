@@ -6,7 +6,6 @@ Results go to a ReplayStore (in-memory only, no DB writes).
 
 import logging
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
@@ -57,8 +56,9 @@ class ReplayWorker:
 
     def _run(self):
         try:
-            from kafka import KafkaConsumer
             import json
+
+            from kafka import KafkaConsumer
 
             consumer = KafkaConsumer(
                 "deepfield-raw-signals",

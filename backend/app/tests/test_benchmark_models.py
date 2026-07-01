@@ -2,9 +2,6 @@
 
 from uuid import uuid4
 
-import pytest
-from pydantic import ValidationError
-
 from app.domain.models import BenchmarkRequest, BenchmarkRun
 
 

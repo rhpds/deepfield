@@ -1,21 +1,19 @@
 """Live processing session with adjustable parameters."""
 
-import time
 import threading
-from dataclasses import dataclass, field, asdict
+import time
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
-from app.generators.synthetic import SyntheticFleetGenerator
-from app.normalizers.signal_normalizer import normalize_batch
-from app.nanoagents.pipeline import run_pipeline
 from app.correlation.engine import correlate
-from app.routing.signal_router import route_signals, create_reasoning_tasks
-from app.inference.client import MockInferenceClient, InferenceClient
+from app.generators.synthetic import SyntheticFleetGenerator
+from app.inference.client import InferenceClient, MockInferenceClient
 from app.inference.router import resolve_model
-from app.metrics.funnel import compute_funnel
-from app.metrics.capacity import compute_capacity_projection
+from app.nanoagents.pipeline import run_pipeline
+from app.normalizers.signal_normalizer import normalize_batch
+from app.routing.signal_router import create_reasoning_tasks, route_signals
 
 
 @dataclass

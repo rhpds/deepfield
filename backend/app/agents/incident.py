@@ -2,6 +2,7 @@
 
 import json
 import time
+
 from app.agents.base import AgentEvidence, AgentOutput
 from app.agents.prompts import INCIDENT_SYSTEM, format_evidence
 from app.inference.client import InferenceClient

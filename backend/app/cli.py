@@ -1,6 +1,5 @@
 """DeepField CLI."""
 
-import json
 import sys
 
 
@@ -65,7 +64,7 @@ def _run_benchmark():
 
 
 def _capacity_report():
-    from app.orchestrator import run_synthetic, run_benchmark, run_capacity_projection
+    from app.orchestrator import run_benchmark, run_capacity_projection, run_synthetic
     args = _parse_args(sys.argv[2:])
     seed = int(args.get("seed", 42))
     profile = args.get("profile", "small")
@@ -81,13 +80,13 @@ def _capacity_report():
     print("\nComputing capacity projection...")
     projection = run_capacity_projection(synthetic, benchmark)
     print(f"\n{'='*60}")
-    print(f"DEEPFIELD CAPACITY PROJECTION")
+    print("DEEPFIELD CAPACITY PROJECTION")
     print(f"{'='*60}")
     print(f"Reasoning Compression Ratio: {projection['compression_ratio']:,.1f}:1")
     print(f"Max Reasoning Tasks/min:     {projection['max_reasoning_tasks_per_minute']:,.1f}")
     print(f"Avg Signals/Cluster:         {projection['avg_signals_per_cluster']:,.0f}")
     print(f"p95 Latency:                 {projection['p95_latency_ms']:,.0f}ms")
-    print(f"")
+    print("")
     print(f">>> PROJECTED CLUSTERS SUPPORTED: {projection['projected_clusters_supported']}")
     print(f"{'='*60}")
 

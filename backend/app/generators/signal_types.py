@@ -1,6 +1,6 @@
 """Signal types and failure scenarios for synthetic fleet generation."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 SIGNAL_TYPES = [
     "pod_running",

@@ -34,6 +34,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+ignore = ["E501"]  # prompts, SQL strings, and test fixtures have intentional long literals
 
 [build-system]
 requires = ["setuptools>=75"]

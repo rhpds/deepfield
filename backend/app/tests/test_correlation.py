@@ -3,8 +3,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.domain.models import NormalizedSignal
 from app.correlation.engine import correlate_by_namespace, correlate_cross_cluster
+from app.domain.models import NormalizedSignal
 
 
 def _signal(signal_type="pod_crashloop", severity="high", namespace="ns-prod-001",

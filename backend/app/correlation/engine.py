@@ -4,8 +4,8 @@ from collections import defaultdict
 from typing import List
 from uuid import uuid4
 
+from app.correlation.keys import cross_cluster_type_key, namespace_key
 from app.domain.models import CandidateFinding, NormalizedSignal
-from app.correlation.keys import namespace_key, cross_cluster_type_key
 
 CORRELATION_MIN_SIGNALS = 2
 FINDING_SEVERITY_PRIORITY = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}

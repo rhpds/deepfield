@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.domain.models import CandidateFinding, FilterDecision, NormalizedSignal
-from app.routing.signal_router import route_signals, create_reasoning_tasks
+from app.routing.signal_router import create_reasoning_tasks, route_signals
 
 
 def _signal(signal_type="pod_running", severity="info"):

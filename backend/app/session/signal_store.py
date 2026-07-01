@@ -1,9 +1,9 @@
 """Full-detail signal, decision, finding, and inference store for observatory."""
 
 from collections import deque
-from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from typing import Dict
 
 
 @dataclass
@@ -67,7 +67,9 @@ class SignalStore:
 
     def _load_historical_stats(self):
         """Seed agent stats from DB on startup so dashboard isn't empty after restart."""
-        import os, logging, threading
+        import logging
+        import os
+        import threading
         _logger = logging.getLogger(__name__)
         db_url = os.getenv("DATABASE_URL", "")
         if not db_url:
@@ -76,7 +78,9 @@ class SignalStore:
 
         def _sync_load():
             try:
-                import asyncio, asyncpg
+                import asyncio
+
+                import asyncpg
                 async def _do():
                     conn = await asyncpg.connect(db_url)
                     try:

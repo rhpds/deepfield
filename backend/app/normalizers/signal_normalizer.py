@@ -1,10 +1,8 @@
 """Converts RawSignal → NormalizedSignal with severity classification."""
 
-from datetime import datetime, timezone
 
 from app.domain.models import NormalizedSignal, RawSignal
-from app.generators.signal_types import FAILURE_SIGNALS, HEALTHY_SIGNALS, WARNING_SIGNALS
-
+from app.generators.signal_types import FAILURE_SIGNALS, WARNING_SIGNALS
 
 SEVERITY_MAP = {
     "pod_running": "info",

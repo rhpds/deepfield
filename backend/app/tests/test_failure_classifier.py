@@ -5,8 +5,6 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
-import pytest
-
 from app.domain.models import NormalizedSignal
 from app.nanoagents import failure_classifier
 

@@ -7,14 +7,16 @@ All commands are validated against an allowlist before execution.
 import logging
 import os
 import re
+
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from app.auth import require_write_access
 from typing import Optional
+
+from app.auth import require_write_access
 
 router = APIRouter(prefix="/api/v1/remediation", tags=["remediation"])
 
@@ -126,7 +128,7 @@ async def parse_command(req: ParseRequest):
         "read_only": is_read_only,
         "ecosystem": is_ecosystem,
         "blocked": blocked,
-        "block_reason": f"Write commands blocked outside ecosystem namespaces" if blocked else None,
+        "block_reason": "Write commands blocked outside ecosystem namespaces" if blocked else None,
     }
 
 

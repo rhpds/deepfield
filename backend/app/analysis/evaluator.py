@@ -4,9 +4,8 @@ Each rubric produces a score: healthy, warning, or failing.
 Scores are based on real production metrics, not test fixtures.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict
 
 
 @dataclass

@@ -15,7 +15,7 @@ from collections import deque
 from datetime import datetime, timezone
 from fnmatch import fnmatch
 from typing import Dict, List, Optional, Tuple
-from uuid import uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, uuid5
 
 import httpx
 

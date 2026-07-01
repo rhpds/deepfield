@@ -1,15 +1,15 @@
 """Benchmark runner — concurrent execution with live progress tracking."""
 
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 from uuid import uuid4
 
-from app.inference.client import InferenceClient
 from app.benchmark.generator import BenchmarkWorkloadGenerator
-from app.benchmark.metrics import aggregate_benchmark_results, detect_saturation_point, BenchmarkMetrics
+from app.benchmark.metrics import BenchmarkMetrics, aggregate_benchmark_results, detect_saturation_point
 from app.domain.models import BenchmarkRequest
+from app.inference.client import InferenceClient
 
 
 def _execute_request(client: InferenceClient, req: BenchmarkRequest, concurrency: int) -> dict:

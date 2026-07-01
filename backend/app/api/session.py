@@ -1,14 +1,14 @@
 """Session API — separate live monitoring (auto-start) and synthetic (push-button)."""
 
 import os
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from typing import Optional
 
-from app.auth import require_write_access
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from app.session.synthetic_session import create_synthetic_session, get_synthetic_session
+from app.auth import require_write_access
 from app.session.streaming_session import create_streaming_session, get_streaming_session
+from app.session.synthetic_session import create_synthetic_session, get_synthetic_session
 
 router = APIRouter(prefix="/api/v1/session", tags=["session"])
 
@@ -180,9 +180,10 @@ async def inject_signal(body: dict):
     if not session:
         raise HTTPException(status_code=404, detail="No active session")
 
-    from app.domain.models import RawSignal
-    from uuid import uuid4
     from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from app.domain.models import RawSignal
     sig = RawSignal(
         signal_id=uuid4(),
         cluster_id=uuid4(),

@@ -107,11 +107,17 @@ def _build_evidence_block(f: CandidateFinding, evidence_bundle: dict = None) -> 
 
 def create_reasoning_tasks(findings: List[CandidateFinding], evidence_bundles: dict = None) -> List[ReasoningTask]:
     import json
+
     from app.agents.prompts import (
-        RCA_SYSTEM, TRIAGE_SYSTEM, CORRELATION_SYSTEM,
-        CLASSIFY_SIGNAL_SYSTEM, CORRELATE_FINDINGS_SYSTEM,
-        SUGGEST_REMEDIATION_SYSTEM, EXPLAIN_SIGNAL_SYSTEM,
-        FILTER_NOISE_SYSTEM, get_system_prompt,
+        CLASSIFY_SIGNAL_SYSTEM,
+        CORRELATE_FINDINGS_SYSTEM,
+        CORRELATION_SYSTEM,
+        EXPLAIN_SIGNAL_SYSTEM,
+        FILTER_NOISE_SYSTEM,
+        RCA_SYSTEM,
+        SUGGEST_REMEDIATION_SYSTEM,
+        TRIAGE_SYSTEM,
+        get_system_prompt,
     )
 
     tasks = []

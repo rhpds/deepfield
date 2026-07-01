@@ -1,11 +1,11 @@
 """Polls Prometheus/Thanos for live vLLM and node metrics."""
 
 import os
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
-import httpx
 
+import httpx
 
 THANOS_URL = os.getenv("THANOS_URL", "")
 

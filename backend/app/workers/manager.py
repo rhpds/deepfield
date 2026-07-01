@@ -3,9 +3,9 @@
 import logging
 from typing import Dict, Optional
 
-from app.workers.nano_agent_worker import NanoAgentWorker
 from app.workers.correlation_worker import CorrelationWorker
 from app.workers.inference_worker import InferenceWorker
+from app.workers.nano_agent_worker import NanoAgentWorker
 
 logger = logging.getLogger("deepfield.workers")
 

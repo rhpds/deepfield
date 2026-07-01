@@ -13,7 +13,7 @@ import re
 from typing import Optional
 
 from app.agents.prompts import load_prompt
-from app.inference.client import InferenceClient, InferenceResponse
+from app.inference.client import InferenceClient
 from app.inference.router import MACRO_MODELS, MICRO_MODELS
 from app.routing.signal_router import _build_evidence_block
 

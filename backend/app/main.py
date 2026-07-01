@@ -7,23 +7,23 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.api.runs import router as runs_router
-from app.api.session import router as session_router
-from app.api.ws import router as ws_router
-from app.api.sse import router as sse_router
 from app.api.demo import router as demo_router
-from app.api.observatory import router as observatory_router
-from app.api.remediation import router as remediation_router
+from app.api.feedback import router as feedback_router
+from app.api.incidents import router as incidents_router
 from app.api.integration import router as integration_router
 from app.api.metrics import router as metrics_router
-from app.api.tuning import router as tuning_router
-from app.api.incidents import router as incidents_router
+from app.api.observatory import router as observatory_router
+from app.api.remediation import router as remediation_router
+from app.api.runs import router as runs_router
 from app.api.scenarios import router as scenarios_router
+from app.api.session import router as session_router
+from app.api.sse import router as sse_router
+from app.api.tuning import router as tuning_router
 from app.api.workers import router as workers_router
-from app.api.feedback import router as feedback_router
+from app.api.ws import router as ws_router
 
 _log = logging.getLogger(__name__)
 

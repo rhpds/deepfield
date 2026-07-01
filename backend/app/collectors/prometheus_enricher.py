@@ -6,8 +6,8 @@ hammering Thanos. Each cluster has its own Thanos endpoint.
 
 import logging
 import os
-import time
 import threading
+import time
 from typing import Dict, Optional
 
 import httpx

@@ -1,11 +1,11 @@
 """TDD tests for specialized reasoning agents."""
 
 from app.agents.base import AgentEvidence, AgentOutput
-from app.agents.triage import TriageAgent
-from app.agents.rca import RCAAgent
-from app.agents.incident import IncidentAgent
 from app.agents.correlation_agent import CorrelationReasoningAgent
+from app.agents.incident import IncidentAgent
+from app.agents.rca import RCAAgent
 from app.agents.remediation import RemediationAgent
+from app.agents.triage import TriageAgent
 from app.inference.client import MockInferenceClient
 
 

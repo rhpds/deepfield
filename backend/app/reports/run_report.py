@@ -4,8 +4,8 @@ import json
 from dataclasses import asdict
 from typing import Optional
 
-from app.metrics.funnel import SignalFunnel
 from app.metrics.capacity import CapacityEstimate
+from app.metrics.funnel import SignalFunnel
 
 
 def generate_run_report_json(

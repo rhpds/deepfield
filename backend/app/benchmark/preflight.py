@@ -1,7 +1,8 @@
 """Preflight checks and warmup for benchmark runs."""
 
-import time
 import os
+import time
+
 import httpx
 
 from app.inference.adapters import MODEL_ENDPOINTS

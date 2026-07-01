@@ -2,8 +2,8 @@
 
 import time
 
-from app.session.synthetic_session import SyntheticSession
 from app.inference.client import MockInferenceClient
+from app.session.synthetic_session import SyntheticSession
 
 
 def test_synthetic_session_starts_and_stops():

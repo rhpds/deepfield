@@ -7,16 +7,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.domain.models import (
-    BenchmarkRequest,
-    BenchmarkResult,
     BenchmarkRun,
-    CandidateFinding,
     CapacityProjection,
     ClusterRef,
     DeepFieldRun,
     FilterDecision,
-    FinalInsight,
-    InferenceResult,
     NormalizedSignal,
     RawSignal,
     ReasoningTask,

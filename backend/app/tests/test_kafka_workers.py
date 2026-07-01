@@ -1,10 +1,10 @@
 """Tests for Kafka consumer workers — unit tests without Kafka dependency."""
 
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
 
 # --- NanoAgentWorker ---
 
@@ -35,8 +35,8 @@ class TestNanoAgentWorker:
 
     @patch("app.integrations.kafka_publisher.publish_filtered_signal")
     def test_process_records_decisions_to_store(self, mock_publish):
-        from app.workers.nano_agent_worker import NanoAgentWorker
         from app.session.signal_store import SignalStore
+        from app.workers.nano_agent_worker import NanoAgentWorker
         store = SignalStore()
         worker = NanoAgentWorker(store=store)
         msg = self._make_raw_message()
@@ -51,8 +51,8 @@ class TestNanoAgentWorker:
 
     @patch("app.integrations.kafka_publisher.publish_filtered_signal")
     def test_process_with_cluster_profile(self, mock_publish):
-        from app.workers.nano_agent_worker import NanoAgentWorker
         from app.session.cluster_profile import ClusterProfile
+        from app.workers.nano_agent_worker import NanoAgentWorker
         profile = ClusterProfile(cluster_id="test-cluster")
         worker = NanoAgentWorker(cluster_profile=profile)
         msg = self._make_raw_message()
@@ -117,8 +117,8 @@ class TestCorrelationWorker:
 
     @patch("app.integrations.kafka_publisher.publish_finding")
     def test_store_receives_findings(self, mock_publish):
-        from app.workers.correlation_worker import CorrelationWorker
         from app.session.signal_store import SignalStore
+        from app.workers.correlation_worker import CorrelationWorker
         store = SignalStore()
         cluster_id = str(uuid4())
         worker = CorrelationWorker(store=store)
@@ -155,8 +155,8 @@ class TestInferenceWorker:
 
     @patch("app.integrations.kafka_publisher.publish_to_kafka")
     def test_process_with_mock_client(self, mock_publish):
-        from app.workers.inference_worker import InferenceWorker
         from app.inference.client import MockInferenceClient
+        from app.workers.inference_worker import InferenceWorker
         client = MockInferenceClient(seed=42)
         worker = InferenceWorker(client=client)
         worker.process(self._make_finding_message())
@@ -164,9 +164,9 @@ class TestInferenceWorker:
 
     @patch("app.integrations.kafka_publisher.publish_to_kafka")
     def test_inference_records_to_store(self, mock_publish):
-        from app.workers.inference_worker import InferenceWorker
         from app.inference.client import MockInferenceClient
         from app.session.signal_store import SignalStore
+        from app.workers.inference_worker import InferenceWorker
         client = MockInferenceClient(seed=42)
         store = SignalStore()
         worker = InferenceWorker(client=client, store=store)

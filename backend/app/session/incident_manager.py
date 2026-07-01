@@ -23,7 +23,9 @@ class IncidentManager:
         self._load_from_db()
 
     def _load_from_db(self):
-        import os, json as _json, threading
+        import json as _json
+        import os
+        import threading
         db_url = os.getenv("DATABASE_URL", "")
         if not db_url:
             return
@@ -32,7 +34,9 @@ class IncidentManager:
 
         def _sync_load():
             try:
-                import asyncio, asyncpg
+                import asyncio
+
+                import asyncpg
                 async def _do():
                     conn = await asyncpg.connect(db_url)
                     try:
@@ -79,6 +83,7 @@ class IncidentManager:
     def _persist(self, inc: dict):
         try:
             import json as _json
+
             from app.db import enqueue_write
             enqueue_write("incidents", {
                 "id": inc["id"],

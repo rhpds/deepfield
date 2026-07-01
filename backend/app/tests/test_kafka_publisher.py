@@ -3,7 +3,6 @@
 Tests that DeepField signal events publish to Kafka topics.
 """
 
-import pytest
 from unittest.mock import patch
 
 

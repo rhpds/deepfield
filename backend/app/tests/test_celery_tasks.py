@@ -1,5 +1,4 @@
 """Celery tasks — TDD."""
-import pytest
 
 
 class TestCeleryApp:

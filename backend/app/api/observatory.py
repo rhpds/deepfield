@@ -5,6 +5,7 @@ Falls back to in-memory session data when DB is empty.
 """
 
 from typing import Optional
+
 from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/api/v1/observatory", tags=["observatory"])
