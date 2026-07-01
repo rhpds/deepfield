@@ -20,7 +20,7 @@ _MICRO_ROTATION = ["granite_2b_cpu", "phi3_mini_cpu", "qwen25_3b_cpu"]
 _micro_idx = 0
 
 # Macro agent models (Gaudi 3 GPU)
-_MACRO_ROTATION = ["deepseek", "qwen3", "phi4", "qwen3b"]
+_MACRO_ROTATION = ["deepseek", "phi4", "qwen3b"]
 _macro_idx = 0
 
 _routing_mode = "production"
@@ -203,7 +203,7 @@ def create_reasoning_tasks(findings: List[CandidateFinding], evidence_bundles: d
             s.get("evidence", {}).get("escalated") or s.get("outcome") == "escalate"
             for s in signals
         )
-        if has_escalation or f.severity in ("high", "critical"):
+        if has_escalation:
             micro_model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
             tasks.append(ReasoningTask(
                 task_id=uuid4(),

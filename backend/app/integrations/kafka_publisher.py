@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time as _time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -26,13 +27,25 @@ TOPIC_MAP = {
 AUDIT_TOPIC = "audit-trail"
 
 _producer = None
+_last_failure_time = 0.0
+_RETRY_COOLDOWN = 30
+
+
+def _is_local_bootstrap() -> bool:
+    if not KAFKA_BOOTSTRAP:
+        return True
+    return any(h in KAFKA_BOOTSTRAP for h in ("localhost", "127.0.0.1", "::1"))
 
 
 def _get_producer():
-    global _producer
+    global _producer, _last_failure_time
     if _producer is not None:
         return _producer
     if not KAFKA_BOOTSTRAP:
+        return None
+    if _is_local_bootstrap():
+        return None
+    if _last_failure_time and (_time.monotonic() - _last_failure_time) < _RETRY_COOLDOWN:
         return None
     try:
         from kafka import KafkaProducer
@@ -41,6 +54,7 @@ def _get_producer():
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             key_serializer=lambda k: k.encode("utf-8") if k else None,
             acks=1, retries=2, request_timeout_ms=5000, max_block_ms=3000,
+            api_version_auto_timeout_ms=5000,
         )
         logger.info("Kafka producer connected to %s", KAFKA_BOOTSTRAP)
         return _producer
@@ -48,6 +62,7 @@ def _get_producer():
         logger.debug("kafka-python not installed — Kafka publishing disabled")
         return None
     except Exception as e:
+        _last_failure_time = _time.monotonic()
         logger.debug("Kafka producer init failed: %s", e)
         return None
 

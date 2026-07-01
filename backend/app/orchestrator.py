@@ -73,7 +73,8 @@ def run_synthetic(
         insights_count=len(inference_results),
     )
 
-    signals_per_cluster_per_min = len(raw_signals) / max(len(clusters), 1)
+    elapsed_minutes = max(duration_ms / 60_000, 1.0)
+    signals_per_cluster_per_min = len(raw_signals) / max(len(clusters), 1) / elapsed_minutes
 
     report_json = generate_run_report_json(run_id, "synthetic", profile, funnel, duration_ms=duration_ms)
     report_md = generate_run_report_md(run_id, "synthetic", profile, funnel, duration_ms=duration_ms)

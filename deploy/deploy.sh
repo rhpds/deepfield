@@ -56,6 +56,8 @@ oc create secret generic deepfield-secrets \
   --from-literal=CLUSTER_1_NAME="${CLUSTER_1_NAME}" \
   --from-literal=CLUSTER_1_API_URL="${CLUSTER_1_API_URL}" \
   --from-literal=CLUSTER_1_TOKEN="${CLUSTER_1_TOKEN}" \
+  --from-literal=DEEPFIELD_API_KEY="${DEEPFIELD_API_KEY:-$(openssl rand -base64 32)}" \
+  --from-literal=INTEGRATION_API_KEY="${INTEGRATION_API_KEY:-$(openssl rand -base64 32)}" \
   --dry-run=client -o yaml | oc apply -f -
 
 # OAuth proxy
@@ -77,6 +79,10 @@ oc apply -f "$SCRIPT_DIR/configmap.yaml"
 echo "Deploying PostgreSQL..."
 oc apply -f "$SCRIPT_DIR/postgres-pvc.yaml"
 oc apply -f "$SCRIPT_DIR/postgres-deployment.yaml"
+
+# Build frontend
+echo "Building frontend..."
+(cd "$ROOT_DIR/frontend" && npm ci && npm run build)
 
 # Build and push image
 if [ "$BUILD" = true ]; then

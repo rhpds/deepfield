@@ -30,7 +30,24 @@ class TestAuthModule:
         with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
             req = MagicMock()
             req.headers = {"X-Forwarded-User": "jkershaw@redhat.com"}
+            req.client = MagicMock(host="127.0.0.1")
             require_api_key(request=req, api_key="")
+
+    def test_oauth_proxy_rejected_from_untrusted_host(self):
+        from app.auth import require_api_key
+        from fastapi import HTTPException
+        with patch("app.auth.DEEPFIELD_API_KEY", "real-key"):
+            req = MagicMock()
+            req.headers = {"X-Forwarded-User": "jkershaw@redhat.com"}
+            req.client = MagicMock(host="10.0.0.99")
+            with pytest.raises(HTTPException):
+                require_api_key(request=req, api_key="")
+
+    def test_integration_api_key_passes(self):
+        from app.auth import require_api_key
+        with patch("app.auth.DEEPFIELD_API_KEY", "real-key"), \
+             patch("app.auth.INTEGRATION_API_KEY", "int-key"):
+            require_api_key(request=None, api_key="int-key")
 
     def test_spoofable_headers_rejected(self):
         from app.auth import require_api_key

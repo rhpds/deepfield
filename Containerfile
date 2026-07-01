@@ -4,7 +4,7 @@ WORKDIR /opt/app-root/src
 
 COPY backend/pyproject.toml .
 RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml asyncpg \
-    "celery[redis]" kafka-python-ng
+    "celery[redis]" kafka-python
 
 COPY backend/app/ app/
 COPY backend/migrations/ migrations/

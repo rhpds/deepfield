@@ -1,6 +1,8 @@
 """DeepField — Fleet-scale OpenShift signal intelligence and inference benchmarking."""
 
+import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,10 +25,54 @@ from app.api.scenarios import router as scenarios_router
 from app.api.workers import router as workers_router
 from app.api.feedback import router as feedback_router
 
+_log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.db import init_db
+    try:
+        await init_db()
+    except Exception as e:
+        _log.warning("DB init failed (continuing): %s", e)
+
+    from app.api.session import start_live_monitoring
+    _log.warning("STARTUP: calling start_live_monitoring...")
+    try:
+        session = start_live_monitoring()
+        _log.warning("STARTUP: session=%s status=%s", session.session_id[:8] if session else "None", getattr(session, 'status', '?'))
+    except Exception as e:
+        session = None
+        _log.error("STARTUP: live monitoring FAILED: %s", e, exc_info=True)
+
+    try:
+        from app.workers.manager import start_workers
+        client = session.client if session else None
+        store = session.store if session else None
+        profile = session._cluster_profile if session else None
+        if not client:
+            try:
+                from app.inference.adapters import LiteLLMClient
+                client = LiteLLMClient()
+            except Exception:
+                pass
+        start_workers(client=client, store=store, cluster_profile=profile)
+    except Exception as e:
+        _log.warning("Kafka workers startup failed: %s", e)
+
+    yield
+
+    from app.workers.manager import stop_workers
+    stop_workers()
+    from app.db import close_db
+    await close_db()
+
+
 app = FastAPI(
     title="DeepField",
     description="Fleet-scale OpenShift signal intelligence and inference benchmarking platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3100").split(",")
@@ -54,52 +100,6 @@ app.include_router(workers_router)
 app.include_router(feedback_router)
 
 
-@app.on_event("startup")
-async def startup():
-    import logging
-    _log = logging.getLogger(__name__)
-
-    from app.db import init_db
-    try:
-        await init_db()
-    except Exception as e:
-        _log.warning("DB init failed (continuing): %s", e)
-
-    from app.api.session import start_live_monitoring
-    _log.warning("STARTUP: calling start_live_monitoring...")
-    try:
-        session = start_live_monitoring()
-        _log.warning("STARTUP: session=%s status=%s", session.session_id[:8] if session else "None", getattr(session, 'status', '?'))
-    except Exception as e:
-        session = None
-        _log.error("STARTUP: live monitoring FAILED: %s", e, exc_info=True)
-
-    try:
-        from app.workers.manager import start_workers
-        # Ensure inference worker always has an LLM client, even without a live session
-        client = session.client if session else None
-        store = session.store if session else None
-        profile = session._cluster_profile if session else None
-        if not client:
-            try:
-                from app.inference.adapters import LiteLLMClient
-                client = LiteLLMClient()
-            except Exception:
-                pass
-        start_workers(client=client, store=store, cluster_profile=profile)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Kafka workers startup failed: %s", e)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    from app.workers.manager import stop_workers
-    stop_workers()
-    from app.db import close_db
-    await close_db()
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "deepfield"}
@@ -107,14 +107,17 @@ async def health():
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
-    app.mount("/logos", StaticFiles(directory=str(STATIC_DIR / "logos")), name="logos")
+    if (STATIC_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
+    if (STATIC_DIR / "logos").exists():
+        app.mount("/logos", StaticFiles(directory=str(STATIC_DIR / "logos")), name="logos")
 
-    @app.get("/{path:path}")
-    async def serve_spa(path: str):
-        file_path = (STATIC_DIR / path).resolve()
-        if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+    if (STATIC_DIR / "index.html").exists():
+        @app.get("/{path:path}")
+        async def serve_spa(path: str):
+            file_path = (STATIC_DIR / path).resolve()
+            if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+                return FileResponse(STATIC_DIR / "index.html")
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(file_path)
             return FileResponse(STATIC_DIR / "index.html")
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(STATIC_DIR / "index.html")

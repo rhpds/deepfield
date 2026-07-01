@@ -22,3 +22,6 @@ data:
     #
     # Cluster monitoring is read-only (GET/Watch only)
     # Configure cluster endpoints via CLUSTER_1_NAME, CLUSTER_1_API_URL, etc.
+  DEEPFIELD_API_KEY: ""
+  INTEGRATION_API_KEY: ""
+  TRUSTED_PROXY_HOSTS: ""
