@@ -108,13 +108,15 @@ class IncidentManager:
 
     def process_signal(self, namespace: str, cluster_id: str, signal_type: str,
                        severity: str, signal_id: str, resource_name: str = "",
-                       evidence: dict = None) -> dict:
+                       evidence: dict = None, cluster_name: str = "") -> dict:
         key = self._key(namespace, cluster_id)
         existing_id = self._index.get(key)
 
         if existing_id and existing_id in self._incidents:
             inc = self._incidents[existing_id]
             if inc["status"] == "open":
+                if cluster_name and not inc.get("cluster_name"):
+                    inc["cluster_name"] = cluster_name
                 signals = inc["evidence"].get("signals", [])
                 sig_key = f"{signal_type}:{resource_name}"
                 already_has = any(
@@ -146,6 +148,7 @@ class IncidentManager:
         inc = {
             "id": incident_id,
             "cluster_id": cluster_id,
+            "cluster_name": cluster_name or cluster_id,
             "namespace": namespace,
             "failure_class": None,
             "severity": severity,
@@ -313,7 +316,7 @@ class IncidentManager:
             result = push_incident_to_stargate({
                 "incident_id": inc["id"],
                 "namespace": inc["namespace"],
-                "cluster": inc.get("cluster_id", ""),
+                "cluster": inc.get("cluster_name", inc.get("cluster_id", "")),
                 "lab_code": inc.get("namespace"),
                 "failure_class": inc.get("failure_class"),
                 "severity": inc.get("severity", "medium"),

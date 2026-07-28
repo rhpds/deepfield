@@ -869,6 +869,7 @@ class StreamingSession:
                     severity=task.context.get("severity", "high"),
                     signal_id=str(task.task_id)[:8],
                     resource_name=f"{signal_count} correlated signals",
+                    cluster_name=cluster,
                 )
 
                 # Append all correlated signals from the finding evidence
