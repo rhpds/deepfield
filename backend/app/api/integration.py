@@ -7,7 +7,7 @@ import os
 from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Literal
-from uuid import uuid4
+from uuid import NAMESPACE_DNS, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -132,10 +132,13 @@ def _convert_launchpad_event(event: IntegrationEvent) -> RawSignal | None:
     except (ValueError, AttributeError):
         ts = datetime.now(timezone.utc)
 
+    cluster_name = payload.get("cluster_name", "unknown")
+    cluster_id = uuid5(NAMESPACE_DNS, f"launchpad:{cluster_name}")
+
     return RawSignal(
         signal_id=uuid4(),
-        cluster_id=uuid4(),
-        namespace=payload.get("cluster_name", "unknown"),
+        cluster_id=cluster_id,
+        namespace=cluster_name,
         resource_kind=SIGNAL_RESOURCE_KIND.get(signal_type, "LaunchpadSession"),
         resource_name=payload.get("session_id", "unknown"),
         source="launchpad",
@@ -160,12 +163,17 @@ def _convert_stargate_event(event: IntegrationEvent) -> RawSignal | None:
     except (ValueError, AttributeError):
         ts = datetime.now(timezone.utc)
 
+    cluster_name = payload.get("cluster", "unknown")
+    cluster_id = uuid5(NAMESPACE_DNS, f"stargate:{cluster_name}")
+    namespace = payload.get("namespace", payload.get("cluster", "unknown"))
+    resource_name = payload.get("lab_code", payload.get("run_id", payload.get("stage_id", "unknown")))
+
     return RawSignal(
         signal_id=uuid4(),
-        cluster_id=uuid4(),
-        namespace=payload.get("namespace", "unknown"),
+        cluster_id=cluster_id,
+        namespace=namespace,
         resource_kind=SIGNAL_RESOURCE_KIND.get(signal_type, "StarGateRun"),
-        resource_name=payload.get("run_id", payload.get("stage_id", "unknown")),
+        resource_name=resource_name,
         source="stargate",
         signal_type=signal_type,
         raw_payload=payload,
