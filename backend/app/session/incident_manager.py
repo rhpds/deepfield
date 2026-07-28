@@ -299,8 +299,10 @@ class IncidentManager:
         return inc
 
     def _maybe_publish_to_stargate(self, inc: dict) -> None:
-        """Publish incident to StarGate when it has RCA output and at least one remediation option."""
+        """Publish incident to StarGate when severity is critical/high, has RCA and remediation."""
         if inc.get("evidence", {}).get("stargate_published"):
+            return
+        if inc.get("severity") not in ("critical", "high"):
             return
         if not inc.get("rca_output"):
             return
