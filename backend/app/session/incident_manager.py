@@ -275,6 +275,7 @@ class IncidentManager:
             inc["rca_output"] = output
         inc["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._persist(inc)
+        self._maybe_publish_to_stargate(inc)
         return inc
 
     def add_remediation_option(self, namespace: str, cluster_id: str,
@@ -294,7 +295,38 @@ class IncidentManager:
         inc["evidence"]["remediations_suggested"].append(option)
         inc["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._persist(inc)
+        self._maybe_publish_to_stargate(inc)
         return inc
+
+    def _maybe_publish_to_stargate(self, inc: dict) -> None:
+        """Publish incident to StarGate when it has RCA output and at least one remediation option."""
+        if inc.get("evidence", {}).get("stargate_published"):
+            return
+        if not inc.get("rca_output"):
+            return
+        if not inc.get("remediation_options"):
+            return
+        try:
+            from app.integrations.event_publisher import push_incident_to_stargate
+            result = push_incident_to_stargate({
+                "incident_id": inc["id"],
+                "namespace": inc["namespace"],
+                "cluster": inc.get("cluster_id", ""),
+                "lab_code": inc.get("namespace"),
+                "failure_class": inc.get("failure_class"),
+                "severity": inc.get("severity", "medium"),
+                "confidence": inc.get("classification", {}).get("confidence", 0.5) if inc.get("classification") else 0.5,
+                "rca_output": inc["rca_output"],
+                "correlated_signals": inc.get("evidence", {}).get("signals", []),
+                "remediation_options": inc.get("remediation_options", []),
+                "evidence_chain": inc.get("evidence", {}).get("findings", []),
+                "signal_count": inc.get("signal_count", 0),
+            })
+            if result:
+                inc["evidence"]["stargate_published"] = True
+                logger.info("Incident %s published to StarGate", inc["id"])
+        except Exception as e:
+            logger.warning("Failed to publish incident to StarGate: %s", e)
 
     def resolve_incident(self, incident_id: str) -> dict:
         inc = self._incidents.get(incident_id)
