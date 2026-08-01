@@ -59,6 +59,63 @@ LITELLM_MODELS = {
         "litellm_model": "qwen25-3b-cpu",
         "hardware_lane": "xeon6",
     },
+    # Corpora-routed models (benchmark-proven, all Xeon 6 CPU)
+    "granite_350m_cpu_xeon": {
+        "litellm_model": "granite-350m",
+        "hardware_lane": "xeon6",
+    },
+    "granite_2b_int8_xeon": {
+        "litellm_model": "granite-2b-int8",
+        "hardware_lane": "xeon6",
+    },
+    "granite_2b_speculative_xeon": {
+        "litellm_model": "granite-2b-cpu-speculative",
+        "hardware_lane": "xeon6",
+    },
+    "granite_41_3b_cpu_xeon": {
+        "litellm_model": "granite-4.1-3b",
+        "hardware_lane": "xeon6",
+    },
+    "granite_41_8b_cpu_xeon": {
+        "litellm_model": "granite-4.1-8b",
+        "hardware_lane": "xeon6",
+    },
+    "smollm2_360m_cpu_xeon": {
+        "litellm_model": "smollm2-360m",
+        "hardware_lane": "xeon6",
+    },
+    "smollm2_17b_cpu_xeon": {
+        "litellm_model": "smollm2-1.7b",
+        "hardware_lane": "xeon6",
+    },
+    "bitnet_2b_cpu_xeon": {
+        "litellm_model": "bitnet-2b",
+        "hardware_lane": "xeon6",
+    },
+    "phi4_mini_cpu_xeon": {
+        "litellm_model": "phi4-mini",
+        "hardware_lane": "xeon6",
+    },
+    "gemma2_2b_cpu_xeon": {
+        "litellm_model": "gemma2-2b",
+        "hardware_lane": "xeon6",
+    },
+    "qwen36_moe_cpu_xeon": {
+        "litellm_model": "qwen36-moe-35b-a3b",
+        "hardware_lane": "xeon6",
+    },
+    "granite_2b_q4_cpu_xeon": {
+        "litellm_model": "granite-2b-q4",
+        "hardware_lane": "xeon6",
+    },
+    "granite_2b_q8_cpu_xeon": {
+        "litellm_model": "granite-2b-q8",
+        "hardware_lane": "xeon6",
+    },
+    "granite_8b_q4_cpu_xeon": {
+        "litellm_model": "granite-8b-q4",
+        "hardware_lane": "xeon6",
+    },
 }
 
 

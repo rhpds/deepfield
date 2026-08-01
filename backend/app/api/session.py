@@ -118,6 +118,8 @@ class StartSessionRequest(BaseModel):
     scan_interval: int = 30
     live_clusters: Optional[list] = None
     target_namespaces: Optional[list] = None
+    industry: str = "basic"
+    workload_type: Optional[str] = None
 
 
 class UpdateParamsRequest(BaseModel):
@@ -145,8 +147,11 @@ async def start_session(req: StartSessionRequest):
         from app.inference.client import MockInferenceClient
         client = MockInferenceClient(seed=req.seed)
 
-    from app.routing.signal_router import set_routing_mode
+    from app.routing.signal_router import set_industry, set_routing_mode, set_workload_type
     set_routing_mode(req.routing_mode)
+    set_industry(req.industry)
+    if req.workload_type:
+        set_workload_type(req.workload_type)
 
     session = create_synthetic_session(client=client, seed=req.seed)
     session.update_params(

@@ -207,6 +207,49 @@ def score_safety(new_types_suppressed: int, cross_resource_dedup: int,
     return {"score": _score(checks), "checks": checks}
 
 
+def score_routing(
+    workload_detected: bool,
+    workload_confidence: float,
+    strategy_grade: str,
+    model_quality_grade: str,
+    model_latency_grade: str,
+    model_throughput_grade: str,
+    corpora_hit_rate: float,
+    fallback_rate: float,
+) -> dict:
+    """Score routing quality — 6th EDD rubric dimension."""
+    checks = []
+    grade_map = {"green": "healthy", "yellow": "warning", "red": "failing"}
+
+    if workload_detected and workload_confidence >= 0.8:
+        checks.append(("workload_detection", "healthy"))
+    elif workload_detected and workload_confidence >= 0.5:
+        checks.append(("workload_detection", "warning"))
+    else:
+        checks.append(("workload_detection", "failing"))
+
+    checks.append(("strategy_grade", grade_map.get(strategy_grade, "failing")))
+    checks.append(("model_quality", grade_map.get(model_quality_grade, "failing")))
+    checks.append(("model_latency", grade_map.get(model_latency_grade, "failing")))
+    checks.append(("model_throughput", grade_map.get(model_throughput_grade, "failing")))
+
+    if corpora_hit_rate >= 0.80:
+        checks.append(("corpora_coverage", "healthy"))
+    elif corpora_hit_rate >= 0.50:
+        checks.append(("corpora_coverage", "warning"))
+    else:
+        checks.append(("corpora_coverage", "failing"))
+
+    if fallback_rate <= 0.10:
+        checks.append(("fallback_rate", "healthy"))
+    elif fallback_rate <= 0.30:
+        checks.append(("fallback_rate", "warning"))
+    else:
+        checks.append(("fallback_rate", "failing"))
+
+    return {"score": _score(checks), "checks": checks}
+
+
 def evaluate_pipeline(cluster_id: str, **kwargs) -> dict:
     """Run all EDD rubrics and return overall assessment."""
     rubrics = {
@@ -238,6 +281,16 @@ def evaluate_pipeline(cluster_id: str, **kwargs) -> dict:
             new_types_suppressed=kwargs.get("new_types_suppressed", 0),
             cross_resource_dedup=kwargs.get("cross_resource_dedup", 0),
             critical_deduped=kwargs.get("critical_deduped", 0),
+        ),
+        "routing_quality": score_routing(
+            workload_detected=kwargs.get("workload_detected", False),
+            workload_confidence=kwargs.get("workload_confidence", 0.0),
+            strategy_grade=kwargs.get("strategy_grade", "red"),
+            model_quality_grade=kwargs.get("model_quality_grade", "red"),
+            model_latency_grade=kwargs.get("model_latency_grade", "red"),
+            model_throughput_grade=kwargs.get("model_throughput_grade", "red"),
+            corpora_hit_rate=kwargs.get("corpora_hit_rate", 0.0),
+            fallback_rate=kwargs.get("fallback_rate", 1.0),
         ),
     }
 

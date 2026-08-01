@@ -3,9 +3,12 @@
 Nano agents: deterministic filters (no LLM) — already run in nanoagents/pipeline.py
 Micro agents: Xeon 6 CPU (OpenVINO, 15-28 tok/s) — fast triage on low/medium findings
 Macro agents: Gaudi 3 GPU (50-60 tok/s) — deep reasoning on high/critical findings
+
+Routing decisions are backed by the intel-inference-router corpora when available.
 """
 
-from typing import List
+import logging
+from typing import List, Optional
 from uuid import uuid4
 
 from app.domain.models import (
@@ -14,6 +17,20 @@ from app.domain.models import (
     NormalizedSignal,
     ReasoningTask,
 )
+
+try:
+    from intel_inference_router import (
+        CORPORA_TO_ENDPOINT,
+        StrategyRouter,
+        WorkloadBootstrapper,
+        load_corpora,
+        resolve_benchmark_task,
+    )
+    _HAS_ROUTER = True
+except ImportError:
+    _HAS_ROUTER = False
+
+log = logging.getLogger(__name__)
 
 # Micro agent models (Xeon 6 CPU — OpenVINO)
 _MICRO_ROTATION = ["granite_2b_cpu", "phi3_mini_cpu", "qwen25_3b_cpu"]
@@ -24,11 +41,73 @@ _MACRO_ROTATION = ["deepseek", "phi4", "qwen3b"]
 _macro_idx = 0
 
 _routing_mode = "production"
+_industry = "basic"
+_workload_type: Optional[str] = None
+
+_strategy_router: Optional[object] = None
+_bootstrapper: Optional[object] = None
 
 
 def set_routing_mode(mode: str):
     global _routing_mode
     _routing_mode = mode
+
+
+def set_industry(industry: str):
+    global _industry
+    _industry = industry
+
+
+def set_workload_type(workload_type: Optional[str]):
+    global _workload_type
+    _workload_type = workload_type
+
+
+def get_strategy_router():
+    global _strategy_router
+    if _strategy_router is None and _HAS_ROUTER:
+        _strategy_router = StrategyRouter()
+    return _strategy_router
+
+
+def get_bootstrapper():
+    global _bootstrapper
+    if _bootstrapper is None and _HAS_ROUTER:
+        _bootstrapper = WorkloadBootstrapper()
+    return _bootstrapper
+
+
+def observe_signal(signal: NormalizedSignal, decisions: List[FilterDecision]):
+    """Feed a signal to the workload bootstrapper for auto-detection."""
+    bootstrapper = get_bootstrapper()
+    if bootstrapper and not _workload_type:
+        sig_dict = {
+            "signal_type": signal.signal_type,
+            "resource_kind": signal.resource_kind,
+            "severity": signal.severity,
+        }
+        dec_dicts = [
+            {"evidence": d.evidence, "outcome": d.outcome}
+            for d in decisions
+        ]
+        bootstrapper.observe(sig_dict, dec_dicts)
+
+
+def _resolve_workload_and_strategy():
+    """Get the current workload type and strategy."""
+    if _workload_type:
+        wt, conf = _workload_type, 1.0
+    elif _bootstrapper and _HAS_ROUTER:
+        wt, conf = _bootstrapper.current_workload()
+    else:
+        wt, conf = "generic", 0.0
+
+    strategy = None
+    sr = get_strategy_router()
+    if sr:
+        strategy = sr.resolve_strategy(wt)
+
+    return wt, conf, strategy
 
 
 def _select_model_for_finding(finding: "CandidateFinding") -> str:
@@ -44,19 +123,52 @@ def _select_model_for_finding(finding: "CandidateFinding") -> str:
             _macro_idx += 1
         return model
 
-    # Production: route by severity
+    # Determine tier from severity
     if finding.finding_type == "cross_cluster_correlation":
-        return "deepseek"
+        tier = "macro"
+    elif finding.severity in ("critical", "high"):
+        tier = "macro"
+    else:
+        tier = "micro"
 
-    if finding.severity in ("critical", "high"):
+    # Try corpora-backed routing
+    if _HAS_ROUTER:
+        _, _, strategy = _resolve_workload_and_strategy()
+        task_type = _finding_to_task_type(finding)
+        industry = _industry
+        if _bootstrapper:
+            industry = _bootstrapper.current_industry() or _industry
+
+        benchmark_task = resolve_benchmark_task(task_type, industry)
+        corpora = load_corpora()
+        if corpora:
+            entry = corpora.lookup(industry, benchmark_task, tier, strategy=strategy)
+            if entry:
+                endpoint = CORPORA_TO_ENDPOINT.get(entry.config.model)
+                if endpoint:
+                    return endpoint
+
+    # Fallback: round-robin
+    if tier == "macro":
+        if finding.finding_type == "cross_cluster_correlation":
+            return "deepseek"
         model = _MACRO_ROTATION[_macro_idx % len(_MACRO_ROTATION)]
         _macro_idx += 1
         return model
 
-    # Medium / low → micro agents on Xeon 6
     model = _MICRO_ROTATION[_micro_idx % len(_MICRO_ROTATION)]
     _micro_idx += 1
     return model
+
+
+def _finding_to_task_type(finding: CandidateFinding) -> str:
+    if finding.finding_type == "cross_cluster_correlation":
+        return "deep_root_cause_analysis"
+    if finding.severity in ("critical",) and len(finding.signal_ids) >= 5:
+        return "deep_root_cause_analysis"
+    if finding.severity in ("critical", "high"):
+        return "root_cause_analysis"
+    return "summarize_finding"
 
 
 def route_signals(signals: List[NormalizedSignal], decisions: List[FilterDecision]) -> dict:
@@ -124,6 +236,8 @@ def create_reasoning_tasks(findings: List[CandidateFinding], evidence_bundles: d
     # Track namespaces across findings for correlate_findings trigger
     namespace_findings: dict = {}
 
+    wt, wt_conf, strategy = _resolve_workload_and_strategy()
+
     for f in findings:
         if f.severity == "info":
             continue
@@ -162,6 +276,10 @@ def create_reasoning_tasks(findings: List[CandidateFinding], evidence_bundles: d
                 "namespaces": f.namespaces,
                 "clusters": [str(c)[:8] for c in f.clusters],
                 "signals": f.evidence.get("signals", [])[:20],
+                "industry": _industry,
+                "workload_type": wt,
+                "workload_confidence": wt_conf,
+                **({"_strategy": strategy} if strategy else {}),
                 **({"bundle_id": eb["bundle_id"]} if eb else {}),
             },
         ))

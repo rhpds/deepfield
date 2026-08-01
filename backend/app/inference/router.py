@@ -1,13 +1,29 @@
-"""Three-tier inference routing: nano (deterministic) → micro (Xeon 6) → macro (Gaudi 3)."""
+"""Three-tier inference routing: nano (deterministic) → micro (Xeon 6) → macro (Gaudi 3).
 
+Layer 2 of the routing engine: resolves a ReasoningTask to an actual model endpoint.
+Uses the intel-inference-router corpora when available, falls back to round-robin.
+"""
+
+import logging
 
 from app.domain.models import ReasoningTask
+
+try:
+    from intel_inference_router import (
+        CORPORA_TO_ENDPOINT,
+        load_corpora,
+        resolve_benchmark_task,
+    )
+    _HAS_ROUTER = True
+except ImportError:
+    _HAS_ROUTER = False
+
+log = logging.getLogger(__name__)
 
 # === Macro agents — Gaudi 3 GPU, deep reasoning (50-60 tok/s) ===
 MACRO_MODELS = [
     "deepseek_r1_distill_qwen_14b_gaudi",
     "phi4_gaudi",
-    # qwen3 removed: 25-30% timeout rate (28-30s avg latency hits request timeout)
 ]
 
 # === Micro agents — Xeon 6 CPU, fast triage (15-28 tok/s via OpenVINO) ===
@@ -24,7 +40,6 @@ TASK_TO_TIER = {
     "cross_cluster_correlation": "macro",
     "fleet_summary": "macro",
     "capacity_estimate": "macro",
-    # Micro-tier task types (Xeon 6 CPU — fast, low-token)
     "classify_signal": "micro",
     "correlate_findings": "micro",
     "suggest_remediation": "micro",
@@ -54,13 +69,43 @@ _micro_idx = 0
 def resolve_model(task: ReasoningTask) -> str:
     global _macro_idx, _micro_idx
 
-    # Explicit preference takes priority
-    if task.model_preference != "auto" and task.model_preference in PREFERENCE_TO_MODEL:
-        return PREFERENCE_TO_MODEL[task.model_preference]
+    # Explicit preference takes priority — check if it's a known endpoint
+    if task.model_preference != "auto":
+        if task.model_preference in PREFERENCE_TO_MODEL:
+            return PREFERENCE_TO_MODEL[task.model_preference]
+        # Corpora-routed endpoints pass through directly
+        from app.inference.client import MODEL_PROFILES
+        if task.model_preference in MODEL_PROFILES:
+            return task.model_preference
 
-    # Route by tier
     tier = TASK_TO_TIER.get(task.task_type, "micro")
 
+    # Layer 2: corpora-backed lookup
+    if _HAS_ROUTER:
+        strategy = task.context.get("_strategy")
+        industry = task.context.get("industry", "basic")
+        benchmark_task = resolve_benchmark_task(task.task_type, industry)
+        corpora = load_corpora()
+        if corpora:
+            entry = corpora.lookup(industry, benchmark_task, tier, strategy=strategy)
+            if entry:
+                endpoint = CORPORA_TO_ENDPOINT.get(entry.config.model)
+                if endpoint:
+                    task.context["corpora_config"] = {
+                        "model": entry.config.model,
+                        "serving_layer": entry.config.serving_layer,
+                        "dtype": entry.config.dtype,
+                        "optimization": entry.config.optimization,
+                    }
+                    task.context["corpora_scorecard"] = {
+                        "quality_grade": entry.scorecard.quality_accuracy_grade,
+                        "latency_grade": entry.scorecard.latency_p95_grade,
+                        "throughput_grade": entry.scorecard.throughput_tok_s_grade,
+                        "overall_grade": entry.scorecard.overall_grade,
+                    }
+                    return endpoint
+
+    # Fallback: round-robin
     if tier == "macro":
         model = MACRO_MODELS[_macro_idx % len(MACRO_MODELS)]
         _macro_idx += 1

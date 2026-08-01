@@ -87,11 +87,7 @@ class ReasoningTask(BaseModel):
         "explain_signal",
         "filter_noise",
     ]
-    model_preference: Literal[
-        "phi4", "qwen3", "qwen3b", "deepseek", "llama70b",
-        "granite_2b_cpu", "phi3_mini_cpu", "qwen25_3b_cpu",
-        "auto",
-    ] = "auto"
+    model_preference: str = "auto"
     route: Optional[str] = None
     prompt: str
     context: dict = Field(default_factory=dict)
