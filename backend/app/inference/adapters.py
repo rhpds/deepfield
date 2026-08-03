@@ -116,6 +116,10 @@ LITELLM_MODELS = {
         "litellm_model": "granite-8b-q4",
         "hardware_lane": "xeon6",
     },
+    "qwen36_moe_cpu_xeon": {
+        "litellm_model": "qwen36-moe-35b-a3b",
+        "hardware_lane": "xeon6",
+    },
 }
 
 

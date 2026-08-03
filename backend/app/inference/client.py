@@ -153,6 +153,12 @@ MODEL_PROFILES = {
         "tokens_per_sec": 11,
         "ttft_base_ms": 95,
     },
+    "qwen36_moe_cpu_xeon": {
+        "hardware_lane": "xeon6",
+        "base_latency_ms": 1500,
+        "tokens_per_sec": 15,
+        "ttft_base_ms": 800,
+    },
 }
 
 

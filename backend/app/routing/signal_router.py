@@ -25,6 +25,8 @@ try:
         WorkloadBootstrapper,
         load_corpora,
         resolve_benchmark_task,
+        resolve_lane,
+        resolve_lane_model,
     )
     from intel_inference_router.scaler import InferenceScaler, PressureObserver
     from intel_inference_router.fleet_manager import FleetManager
@@ -164,7 +166,7 @@ def _select_model_for_finding(finding: "CandidateFinding") -> str:
     else:
         tier = "micro"
 
-    # Try corpora-backed routing
+    # Try lane-based routing (classification / extraction / reasoning)
     if _HAS_ROUTER:
         _, _, strategy = _resolve_workload_and_strategy()
         task_type = _finding_to_task_type(finding)
@@ -173,6 +175,17 @@ def _select_model_for_finding(finding: "CandidateFinding") -> str:
             industry = _bootstrapper.current_industry() or _industry
 
         benchmark_task = resolve_benchmark_task(task_type, industry)
+
+        # Lane routing: pick model from the right pool for this task type
+        lane_model = resolve_lane_model(benchmark_task, excluded_models=_excluded_models or None)
+        if lane_model:
+            endpoint = CORPORA_TO_ENDPOINT.get(lane_model)
+            if endpoint:
+                lane = resolve_lane(benchmark_task)
+                log.debug("Lane route: %s → %s → %s (%s)", benchmark_task, lane, lane_model, endpoint)
+                return endpoint
+
+        # Fallback: corpora lookup by tier
         corpora = load_corpora()
         if corpora:
             entry = corpora.lookup(
