@@ -250,6 +250,82 @@ def score_routing(
     return {"score": _score(checks), "checks": checks}
 
 
+def score_fleet_health(
+    fleet_utilization_pct: float,
+    replica_coverage: str,
+    memory_headroom_pct: float,
+    model_ready_pct: float,
+    aggregate_throughput: float,
+) -> dict:
+    """Score fleet health — 7th EDD rubric dimension."""
+    checks = []
+
+    if fleet_utilization_pct >= 70:
+        checks.append(("fleet_utilization", "healthy"))
+    elif fleet_utilization_pct >= 40:
+        checks.append(("fleet_utilization", "warning"))
+    else:
+        checks.append(("fleet_utilization", "failing"))
+
+    coverage_map = {"all": "healthy", "macro_missing": "warning", "micro_missing": "failing"}
+    checks.append(("replica_coverage", coverage_map.get(replica_coverage, "failing")))
+
+    if memory_headroom_pct >= 20:
+        checks.append(("memory_headroom", "healthy"))
+    elif memory_headroom_pct >= 10:
+        checks.append(("memory_headroom", "warning"))
+    else:
+        checks.append(("memory_headroom", "failing"))
+
+    if model_ready_pct >= 100:
+        checks.append(("model_ready", "healthy"))
+    elif model_ready_pct >= 80:
+        checks.append(("model_ready", "warning"))
+    else:
+        checks.append(("model_ready", "failing"))
+
+    if aggregate_throughput >= 100:
+        checks.append(("aggregate_throughput", "healthy"))
+    elif aggregate_throughput >= 50:
+        checks.append(("aggregate_throughput", "warning"))
+    else:
+        checks.append(("aggregate_throughput", "failing"))
+
+    return {"score": _score(checks), "checks": checks}
+
+
+def score_classification_live(
+    classification_confidence: float,
+    reclassification_samples: int,
+    drift_detected_seconds: float,
+) -> dict:
+    """Score live auto-classification — 8th EDD rubric dimension."""
+    checks = []
+
+    if classification_confidence >= 0.8:
+        checks.append(("confidence", "healthy"))
+    elif classification_confidence >= 0.5:
+        checks.append(("confidence", "warning"))
+    else:
+        checks.append(("confidence", "failing"))
+
+    if reclassification_samples <= 30:
+        checks.append(("reclassification_speed", "healthy"))
+    elif reclassification_samples <= 100:
+        checks.append(("reclassification_speed", "warning"))
+    else:
+        checks.append(("reclassification_speed", "failing"))
+
+    if drift_detected_seconds <= 30:
+        checks.append(("drift_detection", "healthy"))
+    elif drift_detected_seconds <= 120:
+        checks.append(("drift_detection", "warning"))
+    else:
+        checks.append(("drift_detection", "failing"))
+
+    return {"score": _score(checks), "checks": checks}
+
+
 def evaluate_pipeline(cluster_id: str, **kwargs) -> dict:
     """Run all EDD rubrics and return overall assessment."""
     rubrics = {
@@ -291,6 +367,18 @@ def evaluate_pipeline(cluster_id: str, **kwargs) -> dict:
             model_throughput_grade=kwargs.get("model_throughput_grade", "red"),
             corpora_hit_rate=kwargs.get("corpora_hit_rate", 0.0),
             fallback_rate=kwargs.get("fallback_rate", 1.0),
+        ),
+        "fleet_health": score_fleet_health(
+            fleet_utilization_pct=kwargs.get("fleet_utilization_pct", 0.0),
+            replica_coverage=kwargs.get("replica_coverage", "micro_missing"),
+            memory_headroom_pct=kwargs.get("memory_headroom_pct", 0.0),
+            model_ready_pct=kwargs.get("model_ready_pct", 0.0),
+            aggregate_throughput=kwargs.get("aggregate_throughput", 0.0),
+        ),
+        "classification_live": score_classification_live(
+            classification_confidence=kwargs.get("classification_confidence", 0.0),
+            reclassification_samples=kwargs.get("reclassification_samples", 200),
+            drift_detected_seconds=kwargs.get("drift_detected_seconds", 300.0),
         ),
     }
 

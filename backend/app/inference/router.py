@@ -87,7 +87,8 @@ def resolve_model(task: ReasoningTask) -> str:
         benchmark_task = resolve_benchmark_task(task.task_type, industry)
         corpora = load_corpora()
         if corpora:
-            entry = corpora.lookup(industry, benchmark_task, tier, strategy=strategy)
+            excluded = task.context.get("_excluded_models")
+            entry = corpora.lookup(industry, benchmark_task, tier, strategy=strategy, excluded_models=excluded)
             if entry:
                 endpoint = CORPORA_TO_ENDPOINT.get(entry.config.model)
                 if endpoint:

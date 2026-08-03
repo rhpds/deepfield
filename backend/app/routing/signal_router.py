@@ -26,6 +26,8 @@ try:
         load_corpora,
         resolve_benchmark_task,
     )
+    from intel_inference_router.scaler import InferenceScaler, PressureObserver
+    from intel_inference_router.fleet_manager import FleetManager
     _HAS_ROUTER = True
 except ImportError:
     _HAS_ROUTER = False
@@ -46,6 +48,10 @@ _workload_type: Optional[str] = None
 
 _strategy_router: Optional[object] = None
 _bootstrapper: Optional[object] = None
+_scaler: Optional[object] = None
+_fleet_manager: Optional[object] = None
+_pressure_observer: Optional[object] = None
+_excluded_models: set = set()
 
 
 def set_routing_mode(mode: str):
@@ -75,6 +81,33 @@ def get_bootstrapper():
     if _bootstrapper is None and _HAS_ROUTER:
         _bootstrapper = WorkloadBootstrapper()
     return _bootstrapper
+
+
+def get_scaler():
+    global _scaler, _pressure_observer
+    if _scaler is None and _HAS_ROUTER:
+        _pressure_observer = PressureObserver()
+        _scaler = InferenceScaler()
+    return _scaler
+
+
+def get_fleet_manager():
+    global _fleet_manager
+    if _fleet_manager is None and _HAS_ROUTER:
+        _fleet_manager = FleetManager()
+    return _fleet_manager
+
+
+def update_pressure():
+    """Read node pressure and update scaler state. Call periodically."""
+    global _excluded_models
+    scaler = get_scaler()
+    if scaler and _pressure_observer:
+        snapshot = _pressure_observer.read()
+        state = scaler.observe_pressure(snapshot)
+        _excluded_models = set(state.evicted_models)
+        if state.last_action:
+            log.info("Scaler action: %s (grade: %s)", state.last_action, state.scorecard.overall_grade)
 
 
 def observe_signal(signal: NormalizedSignal, decisions: List[FilterDecision]):
@@ -142,7 +175,11 @@ def _select_model_for_finding(finding: "CandidateFinding") -> str:
         benchmark_task = resolve_benchmark_task(task_type, industry)
         corpora = load_corpora()
         if corpora:
-            entry = corpora.lookup(industry, benchmark_task, tier, strategy=strategy)
+            entry = corpora.lookup(
+                industry, benchmark_task, tier,
+                strategy=strategy,
+                excluded_models=_excluded_models or None,
+            )
             if entry:
                 endpoint = CORPORA_TO_ENDPOINT.get(entry.config.model)
                 if endpoint:
@@ -280,6 +317,7 @@ def create_reasoning_tasks(findings: List[CandidateFinding], evidence_bundles: d
                 "workload_type": wt,
                 "workload_confidence": wt_conf,
                 **({"_strategy": strategy} if strategy else {}),
+                **({"_excluded_models": _excluded_models} if _excluded_models else {}),
                 **({"bundle_id": eb["bundle_id"]} if eb else {}),
             },
         ))
