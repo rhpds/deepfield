@@ -4,20 +4,20 @@ Fleet-scale OpenShift signal intelligence and inference benchmarking platform.
 
 Part of the **Launchpad + StarGate + DeepField** platform — three separate products that integrate via webhook events. DeepField is the observability plane.
 
-**Core claim:** One Intel Xeon/Gaudi inference cluster can monitor **N** OpenShift clusters because deterministic nano-agent filters compress fleet telemetry so only a tiny percentage requires expensive LLM reasoning.
+**Core claim:** One Intel Xeon server can monitor **20+ OpenShift clusters** because deterministic nano-agent filters compress fleet telemetry so only 15% requires model inference, and five-lane routing sends each task to the right-sized model.
 
-## The Proof
+## The Proof (Oberon Soak Test)
 
 ```
-10,000,000 raw signals
-    → nano-agent filters (deterministic, no LLM)
-    → 12,000 correlated findings
-    → 600 reasoning tasks routed to LLMs
+30,000,000 signals/day
+    --> 19 nano-agent filters (deterministic, zero cost)
+    --> 85% handled by rules, 15% need inference
+    --> Five-lane routing: classification (88ms) | extraction (3s)
+                          | generation (5s) | reasoning (10s)
+    --> 38.6 GB memory, 8% of Xeon 503 GB server
 
-Reasoning Compression Ratio: 16,666:1
-
-Under this workload, one Intel Xeon 6 / Gaudi 3 inference cluster
-can monitor an estimated N OpenShift clusters at p95 < S seconds.
+Validated: 1-hour soak test, zero errors on live models,
+           full recovery from 64-core CPU stress test.
 ```
 
 ## Role in the Platform
@@ -49,42 +49,122 @@ can monitor an estimated N OpenShift clusters at p95 < S seconds.
 ## Architecture
 
 ```
-Live K8s Watch (7 clusters) / Synthetic Generator / Integration Events
-        ↓
-Signal Normalizer → common schema
-        ↓
-Nano-Agent Filters (14) → deterministic, no LLM, fast
-  - PodHealth, RouteHealth, PVCHealth, NodePressure, NamespaceQuota
-  - KServeEndpoint, KafkaLag, LaunchpadSession, StarGateEvaluation
-  - TransientSuppressor, Dedupe, EventClassifier, FailureClassifier
-  - Adaptive cluster profiles (per-cluster noise/threshold learning)
-        ↓
-Signal Router → drop / keep / correlate / escalate
-        ↓
-Correlation Engine → namespace / cluster / cross-cluster grouping
-        ↓
-Inference Router → 7 models across Gaudi 3 + Xeon 6
-  Macro tier (Gaudi): deepseek-r1-14b, phi-4, qwen3-14b (×2)
-  Micro tier (Xeon):  phi3-mini, qwen25-3b, granite-2b
-        ↓
-Incident Manager → RCA parsing, classification, remediation
-        ↓
-EDD Rubrics → 5-dimension quality scoring (compression, classification, inference, coverage, safety)
-        ↓
-DB Persistence → PostgreSQL (signals, decisions, findings, inferences, incidents, profiles)
-        ↓
-Frontend → 12 pages, recharts, Tailwind dark theme
+Live K8s Watch (20 clusters) / Synthetic Generator / Integration Events
+        |
+        v
+Signal Normalizer --> common schema
+        |
+        v
+Nano-Agent Filters (19) --> deterministic, no LLM, zero cost
+  Stage 1: Noise (Dedupe, Transient, InfraNoise)
+  Stage 2: Infrastructure (Pod, Route, PVC, Node, Quota, KServe, Kafka, Launchpad, StarGate)
+  Stage 3: Application (AppLog, Alert, Security, Provisioning, Network)
+        |
+        v                          +----------------------------------+
+Signal Router                      | Workload Bootstrapper            |
+  drop / keep / correlate         | Detects workload type from       |
+        |                          | signal patterns (cosine sim)     |
+        v                          +----------------+-----------------+
+Correlation Engine                                  |
+  namespace / cluster /                             v
+  cross-cluster grouping           +----------------------------------+
+        |                          | Strategy Router                  |
+        v                          | Picks inference pattern per      |
+                                   | workload (cascade, INT8, etc.)   |
++-------------------------------+  +----------------+-----------------+
+| Five-Lane Inference Router    |                   |
+| (intel-inference-router)      |<------------------+
+|                               |
+|  Classification:  smollm2-360m, granite-350m       (88ms, 40+ tok/s)
+|  Extraction:      granite-2b, qwen25-3b            (3-5s)
+|  Generation:      phi3-mini, qwen25-3b             (3-8s)
+|  Reasoning:       qwen36-moe-35b (MoE)             (5-18s)
+|  Embedding:       (scaffold)                        (<10ms)
++-------------------------------+
+        |
+        v
+Incident Manager --> RCA parsing, classification, remediation
+        |
+        v
++-------------------------------+    +----------------------------------+
+| Pressure Scaler               |    | Fleet Manager                    |
+| Monitors /proc/pressure       |    | Scales model replicas by lane    |
+| Sheds models under load       |    | granite-350m x8, MoE x1, etc.   |
+| Rubric-graded (R/Y/G)        |    | FleetScorecard (R/Y/G)           |
++-------------------------------+    +----------------------------------+
+        |
+        v
+EDD Rubrics --> 8-dimension quality scoring
+  1. Compression quality        5. Tuning safety
+  2. Classification accuracy    6. Routing quality
+  3. Inference value            7. Fleet health
+  4. Signal coverage            8. Classification live
+        |
+        v
+DB Persistence --> PostgreSQL (async, graceful degradation)
+        |
+        v
+Frontend --> 12 pages, recharts, Tailwind dark theme
 ```
 
-## Hardware
+### Key Numbers (from Oberon soak test)
 
-| Model | Hardware | Tier |
-|-------|----------|------|
-| DeepSeek-R1-Distill-Qwen-14B | Gaudi 3, 4 HPUs | Macro |
-| Microsoft Phi-4 | Gaudi 3, 2 HPUs | Macro |
-| Qwen3-14B (2 replicas) | Gaudi 3, 4 HPUs ×2 | Macro |
-| Phi-3-Mini | Xeon 6 CPU | Micro |
-| Qwen2.5-3B | Xeon 6 CPU | Micro |
+| Metric | Value |
+|--------|-------|
+| Signal capacity | 30M signals/day |
+| Cascade compression | 85-92% handled by nano-rules (zero inference cost) |
+| Classification throughput | 200+ tok/s aggregate (8 replicas, 5.6 GB) |
+| Classification latency | 88ms p95 (isolated), 700ms under contention |
+| Memory footprint | 38.6 GB for full five-lane deployment |
+| Xeon utilization | 8% of 503 GB server |
+| Models supported | 19 across OVMS, vLLM, llama-cpp |
+| Stress test | Zero errors through 64-core CPU stress, full recovery |
+
+### Event Flow: One Signal's Journey
+
+```
+1. K8s watch detects pod_crashloop in namespace fraud-scoring
+   |
+2. Normalizer: severity=high, resource_kind=Pod, confidence=0.95
+   |
+3. Nano pipeline (19 agents):
+   - Dedupe: not seen in 60s window --> keep
+   - FailureClassifier: matches "pods_crashlooping" --> enrich
+   - PodHealth: severity=high --> escalate
+   |
+4. Signal Router: escalated + high severity --> keep for correlation
+   |
+5. Bootstrapper observes signal:
+   - Window has 30 signals matching fraud-triage fingerprint
+   - Cosine similarity = 0.82 --> workload_type = "fraud-triage"
+   |
+6. Correlator: groups with 2 other signals in same namespace
+   - Creates CandidateFinding (severity=high, 3 signals)
+   |
+7. Strategy Router: fraud-triage --> routing_ladder_int8 (grade=green)
+   |
+8. Lane Router: task=root_cause_analysis --> reasoning lane
+   - Model: qwen36-moe-35b-a3b (35B MoE, 15 tok/s)
+   |
+9. LiteLLM proxy --> llama-qwen36-moe.triforce.svc:8080
+   |
+10. Inference result: root cause analysis with remediation steps
+    |
+11. Incident Manager: creates/updates incident, stores in PostgreSQL
+    |
+12. EDD Evaluator grades: routing=healthy, fleet=healthy, classification=green
+```
+
+## Hardware (Oberon Cluster)
+
+| Lane | Model | Params | Backend | Replicas | Memory |
+|------|-------|--------|---------|----------|--------|
+| Classification | smollm2-360m | 360M | llama-cpp | 4 | 2.0 GB |
+| Classification | granite-350m | 350M | OVMS | 8 | 7.2 GB |
+| Extraction | granite-2b-cpu | 2B | OVMS | 1 | 5.2 GB |
+| Extraction | qwen25-3b-cpu | 3B | OVMS | 1 | 7.8 GB |
+| Generation | phi3-mini-cpu | 3.8B | OVMS | 1 | 9.9 GB |
+| Reasoning | qwen36-moe-35b | 35B/3B active | llama-cpp | 1 | 20 GB |
 | Granite-2B | Xeon 6 CPU | Micro |
 
 All inference through LiteLLM/MAAS — no direct model endpoint calls.
