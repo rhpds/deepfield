@@ -56,7 +56,7 @@ def test_reasoning_task_created_for_high_value_finding():
     assert len(tasks) == 1
     assert tasks[0].task_type == "root_cause_analysis"  # high severity → macro tier → RCA
     from app.inference.client import MODEL_PROFILES
-    assert tasks[0].model_preference in MODEL_PROFILES or tasks[0].model_preference in ("deepseek", "phi4", "qwen3b")
+    assert tasks[0].model_preference in MODEL_PROFILES or tasks[0].model_preference in ("deepseek", "phi4", "qwen3b", "mistral_7b_cpu_xeon")
 
 
 def test_reasoning_task_not_created_for_dropped_signal():

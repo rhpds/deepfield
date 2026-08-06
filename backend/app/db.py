@@ -249,6 +249,13 @@ def _coerce_value(col: str, val):
                 return [val]
         if isinstance(val, list):
             return val
+    if col in ("first_seen", "last_seen", "created_at", "updated_at", "captured_at", "resolved_at"):
+        if isinstance(val, str) and val:
+            from datetime import datetime, timezone
+            try:
+                return datetime.fromisoformat(val)
+            except (ValueError, TypeError):
+                pass
     if isinstance(val, dict):
         return json.dumps(val)
     if isinstance(val, list):

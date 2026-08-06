@@ -15,6 +15,12 @@ from app.nanoagents.pipeline import run_pipeline
 from app.normalizers.signal_normalizer import normalize_batch
 from app.routing.signal_router import create_reasoning_tasks, route_signals
 
+try:
+    from app.cascade_bridge import CascadeBridge
+    _cascade_bridge = CascadeBridge(audit_dir="/tmp/cascade-audit")
+except Exception:
+    _cascade_bridge = None
+
 
 @dataclass
 class SessionParams:
@@ -139,6 +145,14 @@ class LiveSession:
         clusters, raw_signals = gen.generate()
         normalized = normalize_batch(raw_signals)
         pipeline_result = run_pipeline(normalized)
+
+        # Shadow mode: cascade framework comparison
+        if _cascade_bridge and _cascade_bridge.enabled:
+            try:
+                _cascade_bridge.process(normalized, pipeline_result["decisions"])
+            except Exception as e:
+                log.warning("Cascade bridge error: %s", str(e)[:100])
+
         routing_result = route_signals(normalized, pipeline_result["decisions"])
         findings = correlate(routing_result["kept"])
         tasks = create_reasoning_tasks(findings)

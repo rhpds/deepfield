@@ -33,6 +33,14 @@ from app.nanoagents.pipeline import run_pipeline
 from app.normalizers.signal_normalizer import normalize_signal
 from app.routing.signal_router import create_reasoning_tasks, route_signals
 
+try:
+    from app.cascade_bridge import CascadeBridge
+    _cascade_bridge = CascadeBridge(audit_dir="/tmp/cascade-audit")
+    logger.info("Cascade bridge initialized (shadow mode)")
+except Exception as _e:
+    _cascade_bridge = None
+    logger.info("Cascade bridge not available: %s", _e)
+
 
 @dataclass
 class SessionParams:
@@ -548,6 +556,13 @@ class StreamingSession:
             except Exception as e:
                 logger.error("run_pipeline crashed: %s", e, exc_info=True)
                 pipeline_result = None
+
+            # Shadow mode: cascade framework comparison
+            if pipeline_result is not None and _cascade_bridge and _cascade_bridge.enabled:
+                try:
+                    _cascade_bridge.process(normalized, pipeline_result.get("decisions", []))
+                except Exception as e:
+                    logger.debug("Cascade bridge: %s", str(e)[:80])
 
             if pipeline_result is not None:
                 try:

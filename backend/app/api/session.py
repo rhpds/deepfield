@@ -277,3 +277,52 @@ async def get_live_state():
     if not session:
         return {"status": "no_live_session"}
     return session.get_state()
+
+
+@router.get("/cascade/stats")
+async def get_cascade_stats():
+    """Get cascade framework shadow mode statistics."""
+    try:
+        from app.session.streaming_session import _cascade_bridge
+        if _cascade_bridge and _cascade_bridge.enabled:
+            return {
+                "stats": _cascade_bridge.get_stats(),
+                "rubric": _cascade_bridge.get_rubric(),
+                "gates": _cascade_bridge.get_gate_status(),
+                "promotion_log": _cascade_bridge.get_promotion_log(30),
+                "discovered_agents": _cascade_bridge.get_discovered_agents(),
+                "corpus_analysis": _cascade_bridge.get_corpus_analysis(),
+                "learned_rules": {
+                    "never_drop": list(_cascade_bridge._never_drop_types),
+                    "fn_counts": dict(_cascade_bridge._fn_type_counts),
+                    "activated_types": list(_cascade_bridge._activated_types),
+                },
+                "recent_disagreements": _cascade_bridge.get_disagreements(20),
+            }
+        return {"status": "cascade_bridge_not_enabled"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/cascade/promote")
+async def run_cascade_promotion():
+    """Trigger a promotion round for cascade agents."""
+    try:
+        from app.session.streaming_session import _cascade_bridge
+        if _cascade_bridge and _cascade_bridge.enabled:
+            return _cascade_bridge.run_promotion_round()
+        return {"status": "cascade_bridge_not_enabled"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/cascade/approve-micro")
+async def approve_micro():
+    """Human approval: promote eligible agents to micro tier."""
+    try:
+        from app.session.streaming_session import _cascade_bridge
+        if _cascade_bridge and _cascade_bridge.enabled:
+            return _cascade_bridge.approve_for_micro()
+        return {"status": "cascade_bridge_not_enabled"}
+    except Exception as e:
+        return {"error": str(e)}

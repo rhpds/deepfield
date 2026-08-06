@@ -36,3 +36,4 @@ kubeconfig*
 credentials*
 data/
 .last_run
+*.safetensors

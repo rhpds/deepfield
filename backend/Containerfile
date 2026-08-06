@@ -3,11 +3,19 @@ FROM registry.access.redhat.com/ubi9/python-311:latest
 WORKDIR /opt/app-root/src
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml "celery[redis]" kafka-python asyncpg
+RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml "celery[redis]" kafka-python asyncpg psycopg2-binary \
+    && pip install --no-cache-dir onnxruntime "optimum[onnxruntime]" transformers tokenizers
 
 COPY app/ app/
 COPY migrations/ migrations/
 COPY static/ static/
+COPY models/ models/
+
+# Intel Inference Router — benchmark-driven model selection
+COPY intel-inference-router/ /tmp/intel-inference-router/
+USER 0
+RUN pip install --no-cache-dir /tmp/intel-inference-router/ && rm -rf /tmp/intel-inference-router/
+USER 1001
 
 EXPOSE 8099
 

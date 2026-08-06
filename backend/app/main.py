@@ -112,6 +112,11 @@ if STATIC_DIR.exists():
     if (STATIC_DIR / "logos").exists():
         app.mount("/logos", StaticFiles(directory=str(STATIC_DIR / "logos")), name="logos")
 
+    if (STATIC_DIR / "cascade.html").exists():
+        @app.get("/cascade.html")
+        async def serve_cascade():
+            return FileResponse(STATIC_DIR / "cascade.html")
+
     if (STATIC_DIR / "index.html").exists():
         @app.get("/{path:path}")
         async def serve_spa(path: str):

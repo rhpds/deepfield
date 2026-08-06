@@ -40,6 +40,15 @@ def run_synthetic(
     decisions = pipeline_result["decisions"]
     remaining = pipeline_result["remaining_signals"]
 
+    # Shadow mode: run cascade framework alongside, compare decisions
+    cascade_comparison = {}
+    try:
+        from app.cascade_bridge import CascadeBridge
+        bridge = CascadeBridge()
+        cascade_comparison = bridge.process(normalized, decisions)
+    except Exception:
+        pass
+
     routing_result = route_signals(normalized, decisions)
     kept_signals = routing_result["kept"]
 
