@@ -7,8 +7,7 @@ RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml asyncpg \
     "celery[redis]" kafka-python
 
 COPY backend/intel-inference-router/ intel-inference-router/
-RUN rm -rf intel-inference-router/*.egg-info && \
-    pip install --no-cache-dir ./intel-inference-router
+RUN pip install --no-cache-dir ./intel-inference-router
 
 COPY backend/app/ app/
 COPY backend/migrations/ migrations/
