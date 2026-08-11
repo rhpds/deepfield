@@ -6,6 +6,9 @@ COPY backend/pyproject.toml .
 RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml asyncpg \
     "celery[redis]" kafka-python
 
+COPY backend/intel-inference-router/ intel-inference-router/
+RUN pip install --no-cache-dir ./intel-inference-router
+
 COPY backend/app/ app/
 COPY backend/migrations/ migrations/
 COPY frontend/dist/ static/
