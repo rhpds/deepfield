@@ -4,7 +4,7 @@ WORKDIR /opt/app-root/src
 
 COPY backend/pyproject.toml .
 RUN pip install --no-cache-dir pydantic fastapi uvicorn httpx pyyaml asyncpg \
-    "celery[redis]" kafka-python
+    "celery[redis]" kafka-python psycopg2-binary
 
 COPY backend/intel-inference-router/ intel-inference-router/
 ENV PYTHONPATH="/opt/app-root/src/intel-inference-router:${PYTHONPATH}"
