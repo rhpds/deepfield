@@ -287,19 +287,79 @@ async def get_cascade_stats():
         if _cascade_bridge and _cascade_bridge.enabled:
             return {
                 "stats": _cascade_bridge.get_stats(),
-                "rubric": _cascade_bridge.get_rubric(),
-                "gates": _cascade_bridge.get_gate_status(),
+                "phi4": _cascade_bridge.get_phi4_summary(),
+                "phi4_results": _cascade_bridge.get_phi4_results(10),
                 "promotion_log": _cascade_bridge.get_promotion_log(30),
                 "discovered_agents": _cascade_bridge.get_discovered_agents(),
-                "corpus_analysis": _cascade_bridge.get_corpus_analysis(),
-                "learned_rules": {
-                    "never_drop": list(_cascade_bridge._never_drop_types),
-                    "fn_counts": dict(_cascade_bridge._fn_type_counts),
-                    "activated_types": list(_cascade_bridge._activated_types),
-                },
-                "recent_disagreements": _cascade_bridge.get_disagreements(20),
             }
         return {"status": "cascade_bridge_not_enabled"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/cascade/precision")
+async def get_cascade_precision(sample_size: int = 50):
+    """Sample important signals and estimate precision using a second LLM pass."""
+    try:
+        from app.session.streaming_session import _cascade_bridge
+        if not _cascade_bridge or not _cascade_bridge.enabled:
+            return {"status": "cascade_bridge_not_enabled"}
+
+        import random, json, httpx
+
+        results = _cascade_bridge._phi4_results
+        important = [r for r in results if r.get("classification", "") in
+                     ("needs_attention", "real_incident")]
+        if not important:
+            return {"status": "no_important_signals_to_sample"}
+
+        rng = random.Random(42)
+        sampled = rng.sample(important, min(sample_size, len(important)))
+
+        llm_url = os.getenv("LITELLM_API_BASE", "")
+        llm_key = os.getenv("LITELLM_API_KEY", "")
+        llm_model = os.getenv("CASCADE_LLM_MODEL", "granite-3-2-8b-instruct-cpu")
+
+        if not llm_url:
+            return {"status": "no_llm_configured", "sampled": len(sampled)}
+
+        audit_prompt = (
+            "You are auditing a signal classifier. It marked this signal as important. "
+            "Was it RIGHT to escalate, or is this a false alarm? "
+            "Respond with exactly one word: correct or false_alarm."
+        )
+
+        verdicts = []
+        client = httpx.Client(timeout=30, verify=False)
+        for sig in sampled:
+            text = f"Signal '{sig['classification']}': {sig['signal_type']} {json.dumps({k: v for k, v in sig.items() if k not in ('classification', 'latency_ms')})}"
+            try:
+                r = client.post(f"{llm_url}/v1/chat/completions", json={
+                    "model": llm_model,
+                    "messages": [{"role": "system", "content": audit_prompt},
+                                 {"role": "user", "content": text}],
+                    "max_tokens": 5, "temperature": 0,
+                }, headers={"Authorization": f"Bearer {llm_key}"})
+                ans = r.json()["choices"][0]["message"]["content"].strip().lower()
+                verdict = "true_important" if "correct" in ans else "false_important" if "false" in ans or "alarm" in ans else "inconclusive"
+            except:
+                verdict = "inconclusive"
+            verdicts.append({"signal_type": sig["signal_type"], "classification": sig["classification"], "verdict": verdict})
+        client.close()
+
+        true_imp = sum(1 for v in verdicts if v["verdict"] == "true_important")
+        false_imp = sum(1 for v in verdicts if v["verdict"] == "false_important")
+        inconc = sum(1 for v in verdicts if v["verdict"] == "inconclusive")
+        precision = true_imp / max(1, true_imp + false_imp)
+
+        return {
+            "precision": precision,
+            "sampled": len(verdicts),
+            "true_important": true_imp,
+            "false_important": false_imp,
+            "inconclusive": inconc,
+            "samples": verdicts[:20],
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -316,13 +376,60 @@ async def run_cascade_promotion():
         return {"error": str(e)}
 
 
-@router.post("/cascade/approve-micro")
-async def approve_micro():
-    """Human approval: promote eligible agents to micro tier."""
+@router.post("/cascade/replay")
+async def start_replay(body: dict = {}):
+    """Replay historical signals through the cascade to bootstrap knowledge."""
     try:
         from app.session.streaming_session import _cascade_bridge
-        if _cascade_bridge and _cascade_bridge.enabled:
-            return _cascade_bridge.approve_for_micro()
-        return {"status": "cascade_bridge_not_enabled"}
+        from app.cascade_replay import HistoricalReplay
+
+        if not _cascade_bridge or not _cascade_bridge.enabled:
+            return {"status": "cascade_bridge_not_enabled"}
+
+        batch_size = body.get("batch_size", 1000)
+        limit = body.get("limit", 100000)  # default 100K, not all 130M
+
+        replay = HistoricalReplay(batch_size=batch_size, limit=limit)
+        result = replay.run(_cascade_bridge, background=True)
+
+        # Store replay instance for status checks
+        global _active_replay
+        _active_replay = replay
+        return result
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/cascade/replay/status")
+async def replay_status():
+    """Get replay progress."""
+    try:
+        if _active_replay:
+            return _active_replay.get_status()
+        return {"status": "no replay running"}
+    except Exception:
+        return {"status": "no replay running"}
+
+
+_active_replay = None
+
+
+@router.post("/cascade/aap/start")
+async def start_aap():
+    """Start AAP cascade pipeline (separate from K8s)."""
+    from app.cascade_bridge_aap import start_aap_cascade
+    return start_aap_cascade()
+
+
+@router.post("/cascade/aap/stop")
+async def stop_aap():
+    """Stop AAP cascade pipeline."""
+    from app.cascade_bridge_aap import stop_aap_cascade
+    return stop_aap_cascade()
+
+
+@router.get("/cascade/aap/stats")
+async def aap_stats():
+    """Get AAP cascade stats (separate from K8s)."""
+    from app.cascade_bridge_aap import get_aap_stats
+    return get_aap_stats()
