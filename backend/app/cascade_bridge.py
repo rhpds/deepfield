@@ -200,25 +200,10 @@ class CascadeBridge:
                 sig_type = agent_metrics.config.get("signal_type", "")
                 pattern_type = agent_metrics.config.get("pattern_type", "")
                 if sig_type and sig_type not in self._activated_types:
-                    # Only activate if phi-4 has confirmed this type as noise
+                    self._agent_metrics[agent_metrics.name] = agent_metrics
+                    self._agent_rules[agent_metrics.name] = rule
                     if self._phi4_noise_counts.get(sig_type, 0) >= 3:
-                        if pattern_type == "repeat_flood":
-                            self._repeat_suppressor.add_signal_type(sig_type)
-                        else:
-                            self._noise_suppressor.add_noise_type(sig_type)
-                        self._activated_types.add(sig_type)
-                        self._activated_patterns[sig_type] = pattern_type
-                        self._activation_timestamps[sig_type] = datetime.now(timezone.utc).isoformat()
-                        self._promotion_log.append({
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "event": "activated",
-                            "agent": f"suppress_{sig_type}",
-                            "tier": "nano",
-                            "status": "phi4_confirmed",
-                            "config": agent_metrics.config,
-                        })
-                        log.info("ACTIVATED: %s (phi-4 confirmed %d noise)",
-                                 sig_type, self._phi4_noise_counts[sig_type])
+                        self._activate_agent(sig_type, pattern_type, agent_metrics.config)
                     else:
                         self._promotion_log.append({
                             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -228,6 +213,14 @@ class CascadeBridge:
                             "status": "awaiting_phi4_validation",
                             "config": agent_metrics.config,
                         })
+
+            # Re-check previously discovered agents that now have enough confirmations
+            for name, metrics in list(self._agent_metrics.items()):
+                sig_type = metrics.config.get("signal_type", "")
+                pattern_type = metrics.config.get("pattern_type", "")
+                if sig_type and sig_type not in self._activated_types and pattern_type:
+                    if self._phi4_noise_counts.get(sig_type, 0) >= 3:
+                        self._activate_agent(sig_type, pattern_type, metrics.config)
 
             self._check_activation_ttl()
             self._save_state()
@@ -426,6 +419,25 @@ class CascadeBridge:
                     "reason": f"FN confirmed: {signal_type}",
                 })
                 log.warning("DEMOTED: %s — FN confirmed", signal_type)
+
+    def _activate_agent(self, signal_type: str, pattern_type: str, config: dict):
+        if pattern_type == "repeat_flood":
+            self._repeat_suppressor.add_signal_type(signal_type)
+        else:
+            self._noise_suppressor.add_noise_type(signal_type)
+        self._activated_types.add(signal_type)
+        self._activated_patterns[signal_type] = pattern_type
+        self._activation_timestamps[signal_type] = datetime.now(timezone.utc).isoformat()
+        self._promotion_log.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": "activated",
+            "agent": f"suppress_{signal_type}",
+            "tier": "nano",
+            "status": "phi4_confirmed",
+            "config": config,
+        })
+        log.info("ACTIVATED: %s (phi-4 confirmed %d noise)",
+                 signal_type, self._phi4_noise_counts.get(signal_type, 0))
 
     def _deactivate_agent(self, signal_type: str):
         pattern_type = self._activated_patterns.pop(signal_type, None)
