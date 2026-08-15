@@ -1,0 +1,143 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxy-config
+  namespace: intel-inference
+  labels:
+    app: inference-proxy
+    app.kubernetes.io/part-of: intel-inference-router
+data:
+  config.yaml: |
+    model_list:
+      # OVMS models — classification lane
+      - model_name: smollm2-360m
+        litellm_params:
+          model: openai/smollm2-360m
+          api_base: http://ovms-smollm2-360m:8080/v3
+          api_key: unused
+
+      - model_name: granite-2b-cpu
+        litellm_params:
+          model: openai/granite-2b-cpu
+          api_base: http://ovms-granite-2b:8080/v3
+          api_key: unused
+
+      # llama.cpp models — extraction/generation lane
+      - model_name: smollm3-3b
+        litellm_params:
+          model: openai/smollm3-3b
+          api_base: http://llama-smollm3-3b:8080
+          api_key: unused
+
+      # llama.cpp models — reasoning lane
+      - model_name: qwen36-moe
+        litellm_params:
+          model: openai/qwen36-moe
+          api_base: http://llama-qwen36-moe:8080
+          api_key: unused
+
+    general_settings:
+      master_key: intel-oberon-key
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-proxy
+  namespace: intel-inference
+  labels:
+    app: inference-proxy
+    app.kubernetes.io/part-of: intel-inference-router
+    intel.com/role: gateway
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: inference-proxy
+  template:
+    metadata:
+      labels:
+        app: inference-proxy
+        intel.com/role: gateway
+    spec:
+      containers:
+        - name: litellm
+          image: ghcr.io/litellm/litellm:main-latest
+          args:
+            - "--config"
+            - "/app/config.yaml"
+            - "--port"
+            - "4000"
+          ports:
+            - containerPort: 4000
+              name: http
+              protocol: TCP
+          env:
+            - name: LITELLM_MASTER_KEY
+              value: intel-oberon-key
+          volumeMounts:
+            - name: proxy-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: proxy-config
+          configMap:
+            name: proxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference-proxy
+  namespace: intel-inference
+  labels:
+    app: inference-proxy
+    app.kubernetes.io/part-of: intel-inference-router
+spec:
+  type: ClusterIP
+  selector:
+    app: inference-proxy
+  ports:
+    - port: 4000
+      targetPort: 4000
+      protocol: TCP
+      name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: inference-proxy
+  namespace: intel-inference
+  labels:
+    app: inference-proxy
+    app.kubernetes.io/part-of: intel-inference-router
+spec:
+  host: inference.apps.oberon.fm2aihpcsed.com
+  to:
+    kind: Service
+    name: inference-proxy
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

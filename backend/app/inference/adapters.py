@@ -81,7 +81,7 @@ LITELLM_MODELS = {
         "hardware_lane": "xeon6",
     },
     "smollm2_360m_cpu_xeon": {
-        "litellm_model": "smollm2-360m",
+        "litellm_model": "granite-350m",
         "hardware_lane": "xeon6",
     },
     "smollm2_17b_cpu_xeon": {
@@ -93,7 +93,7 @@ LITELLM_MODELS = {
         "hardware_lane": "xeon6",
     },
     "phi4_mini_cpu_xeon": {
-        "litellm_model": "phi4-mini",
+        "litellm_model": "phi3-mini-cpu",
         "hardware_lane": "xeon6",
     },
     "gemma2_2b_cpu_xeon": {
