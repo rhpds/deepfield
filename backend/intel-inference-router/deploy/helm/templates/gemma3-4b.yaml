@@ -1,0 +1,16 @@
+{{- if .Values.models.gemma34b.enabled }}
+{{- include "iir.llama-deployment" (dict
+  "name" "gemma3-4b"
+  "lane" "classification"
+  "replicas" .Values.models.gemma34b.replicas
+  "image" .Values.models.gemma34b.image
+  "ggufPath" .Values.models.gemma34b.ggufPath
+  "alias" .Values.models.gemma34b.alias
+  "threads" .Values.models.gemma34b.threads
+  "parallel" .Values.models.gemma34b.parallel
+  "ctxSize" .Values.models.gemma34b.ctxSize
+  "cpuStrict" .Values.models.gemma34b.cpuStrict
+  "resources" .Values.models.gemma34b.resources
+  "context" $
+) }}
+{{- end }}

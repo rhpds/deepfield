@@ -1,0 +1,106 @@
+# Intel Inference Router — default values
+# Override with values-sidecar.yaml or values-dedicated.yaml
+
+profile: sidecar  # sidecar | dedicated
+
+namespace: intel-inference
+
+# Model configuration
+models:
+  phi4Mini:
+    enabled: true
+    replicas: 3
+    image: ghcr.io/ggml-org/llama.cpp:server
+    ggufPath: /models/gguf/phi4-mini/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
+    alias: phi4-mini
+    threads: 8
+    parallel: 4
+    ctxSize: 8192
+    cpuStrict: true
+    resources:
+      requests:
+        cpu: "8"
+        memory: "8Gi"
+      limits:
+        cpu: "8"
+        memory: "8Gi"
+
+  gemma34b:
+    enabled: true
+    replicas: 2
+    image: ghcr.io/ggml-org/llama.cpp:server
+    ggufPath: /models/gguf/gemma3-4b/google_gemma-3-4b-it-Q4_K_M.gguf
+    alias: gemma3-4b
+    threads: 8
+    parallel: 4
+    ctxSize: 8192
+    cpuStrict: true
+    resources:
+      requests:
+        cpu: "8"
+        memory: "8Gi"
+      limits:
+        cpu: "8"
+        memory: "8Gi"
+
+  llama321b:
+    enabled: true
+    replicas: 1
+    image: ghcr.io/ggml-org/llama.cpp:server
+    ggufPath: /models/gguf/llama32-1b/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+    alias: llama32-1b
+    threads: 4
+    parallel: 4
+    ctxSize: 8192
+    cpuStrict: true
+    resources:
+      requests:
+        cpu: "4"
+        memory: "4Gi"
+      limits:
+        cpu: "4"
+        memory: "4Gi"
+
+# Encoder classifiers (Phase 3 — optional)
+encoders:
+  enabled: false
+  image: openvino/model_server:latest
+  classifiers:
+    fraud:
+      enabled: true
+      modelPath: /models/encoders/quantized/fraud-int8
+    severity:
+      enabled: true
+      modelPath: /models/encoders/quantized/severity-int8
+    routing:
+      enabled: true
+      modelPath: /models/encoders/quantized/routing-int8
+    sentiment:
+      enabled: true
+      modelPath: /models/encoders/quantized/sentiment-int8
+
+# Cascade service
+cascade:
+  enabled: false
+  replicas: 2
+  image: python:3.11-slim
+  resources:
+    requests:
+      cpu: "2"
+      memory: "1Gi"
+    limits:
+      cpu: "4"
+      memory: "2Gi"
+
+# Model storage
+storage:
+  pvcName: model-cache
+  storageClass: ""
+  size: 200Gi
+  accessMode: ReadWriteMany
+
+# Topology
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iir-config
+  labels:
+    {{- include "iir.labels" . | nindent 4 }}
+data:
+  profile: {{ .Values.profile }}
+  lane-prompts.yaml: |
+    classification:
+      system: "Answer with exactly one word. No explanation."
+    extraction:
+      system: "Extract fields as valid JSON. No markdown."
+      response_format:
+        type: json_object
+    json:
+      system: "Respond with only valid JSON. No markdown fences."
+      response_format:
+        type: json_object
+    generation:
+      system: "Be concise and actionable."
+    reasoning:
+      system: "Analyze concisely. Give a direct answer."
+    code:
+      system: "Output only the command. No explanation."

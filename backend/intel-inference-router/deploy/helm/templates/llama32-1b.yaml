@@ -1,0 +1,16 @@
+{{- if .Values.models.llama321b.enabled }}
+{{- include "iir.llama-deployment" (dict
+  "name" "llama32-1b"
+  "lane" "fallback"
+  "replicas" .Values.models.llama321b.replicas
+  "image" .Values.models.llama321b.image
+  "ggufPath" .Values.models.llama321b.ggufPath
+  "alias" .Values.models.llama321b.alias
+  "threads" .Values.models.llama321b.threads
+  "parallel" .Values.models.llama321b.parallel
+  "ctxSize" .Values.models.llama321b.ctxSize
+  "cpuStrict" .Values.models.llama321b.cpuStrict
+  "resources" .Values.models.llama321b.resources
+  "context" $
+) }}
+{{- end }}

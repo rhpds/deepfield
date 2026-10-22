@@ -1,0 +1,91 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-smollm3-3b
+  namespace: intel-inference
+  labels:
+    app: llama-smollm3-3b
+    app.kubernetes.io/part-of: intel-inference-router
+    intel.com/runtime: llama-cpp
+    intel.com/lane: extraction
+    intel.com/tier: micro
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: llama-smollm3-3b
+  template:
+    metadata:
+      labels:
+        app: llama-smollm3-3b
+        intel.com/runtime: llama-cpp
+        intel.com/lane: extraction
+        intel.com/tier: micro
+    spec:
+      containers:
+        - name: llama-cpp
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - "--model"
+            - "/models/gguf/smollm3-3b/SmolLM3-Q4_K_M.gguf"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8080"
+            - "--ctx-size"
+            - "4096"
+            - "--threads"
+            - "8"
+            - "--alias"
+            - "smollm3-3b"
+            - "--reasoning-format"
+            - "none"
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+          resources:
+            requests:
+              cpu: "8"
+              memory: 4Gi
+            limits:
+              cpu: "8"
+              memory: 4Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 45
+            periodSeconds: 20
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-smollm3-3b
+  namespace: intel-inference
+  labels:
+    app: llama-smollm3-3b
+    app.kubernetes.io/part-of: intel-inference-router
+spec:
+  type: ClusterIP
+  selector:
+    app: llama-smollm3-3b
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http

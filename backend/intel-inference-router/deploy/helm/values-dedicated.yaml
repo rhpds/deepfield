@@ -1,0 +1,19 @@
+# Profile B: Dedicated Inference Server
+# Full box — owns all resources, maximum throughput
+# 30 pods, ~75GB memory, 17-25+ req/s inference, 120+ effective sig/s with cascade
+profile: dedicated
+
+models:
+  phi4Mini:
+    replicas: 20
+  gemma34b:
+    replicas: 8
+  llama321b:
+    replicas: 2
+
+cascade:
+  enabled: true
+  replicas: 2
+
+encoders:
+  enabled: true

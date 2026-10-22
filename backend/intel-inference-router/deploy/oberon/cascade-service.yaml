@@ -1,0 +1,52 @@
+# Cascade service — sits in front of model services
+# Handles 85% of signals deterministically, forwards 15% to inference
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cascade-service
+  labels:
+    app: cascade-service
+    tier: "1"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cascade-service
+  template:
+    metadata:
+      labels:
+        app: cascade-service
+    spec:
+      containers:
+      - name: cascade
+        image: python:3.11-slim
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          pip install --user -q fastapi uvicorn httpx pydantic 2>/dev/null
+          pip install --user -q /app 2>/dev/null
+          export PATH="/root/.local/bin:$PATH"
+          export PYTHONPATH="/root/.local/lib/python3.11/site-packages"
+          uvicorn intel_inference_router.cascade.service:app --host 0.0.0.0 --port 8080 --workers 2
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "2"
+            memory: "1Gi"
+          limits:
+            cpu: "4"
+            memory: "2Gi"
+        # Mount the intel-inference-router package
+        # In production this would be baked into the image
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cascade-service
+spec:
+  selector:
+    app: cascade-service
+  ports:
+  - port: 8080
+    targetPort: 8080

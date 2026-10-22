@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.storage.pvcName }}
+  labels:
+    {{- include "iir.labels" . | nindent 4 }}
+spec:
+  accessModes:
+  - {{ .Values.storage.accessMode }}
+  {{- if .Values.storage.storageClass }}
+  storageClassName: {{ .Values.storage.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}

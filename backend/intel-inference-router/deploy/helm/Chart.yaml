@@ -1,0 +1,16 @@
+apiVersion: v2
+name: intel-inference-router
+description: CPU inference routing engine with cascade compression and benchmark-validated model ladder
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - intel
+  - xeon
+  - inference
+  - cpu
+  - routing
+  - llm
+  - cascade
+maintainers:
+  - name: Intel AI Solutions

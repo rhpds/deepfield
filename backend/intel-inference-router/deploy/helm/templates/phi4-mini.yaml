@@ -1,0 +1,16 @@
+{{- if .Values.models.phi4Mini.enabled }}
+{{- include "iir.llama-deployment" (dict
+  "name" "phi4-mini"
+  "lane" "generation"
+  "replicas" .Values.models.phi4Mini.replicas
+  "image" .Values.models.phi4Mini.image
+  "ggufPath" .Values.models.phi4Mini.ggufPath
+  "alias" .Values.models.phi4Mini.alias
+  "threads" .Values.models.phi4Mini.threads
+  "parallel" .Values.models.phi4Mini.parallel
+  "ctxSize" .Values.models.phi4Mini.ctxSize
+  "cpuStrict" .Values.models.phi4Mini.cpuStrict
+  "resources" .Values.models.phi4Mini.resources
+  "context" $
+) }}
+{{- end }}

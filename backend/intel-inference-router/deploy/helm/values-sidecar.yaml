@@ -1,0 +1,18 @@
+# Profile A: Workload Sidecar
+# Lightweight — shares cluster resources with customer workloads
+# 6 pods, ~20GB memory, 4-13 req/s inference
+profile: sidecar
+
+models:
+  phi4Mini:
+    replicas: 3
+  gemma34b:
+    replicas: 2
+  llama321b:
+    replicas: 1
+
+cascade:
+  enabled: false
+
+encoders:
+  enabled: false
