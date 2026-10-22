@@ -125,9 +125,16 @@ def _start_writer():
 
 
 _RETENTION_DAYS = int(os.getenv("DB_RETENTION_DAYS", "7"))
-_RETENTION_TABLES = ("signals", "decisions", "inferences", "findings",
-                     "metrics_snapshots", "session_snapshots", "agent_stats_snapshots",
-                     "evidence_bundles")
+_RETENTION_TABLES = {
+    "signals": "created_at",
+    "decisions": "created_at",
+    "inferences": "created_at",
+    "findings": "created_at",
+    "metrics_snapshots": "captured_at",
+    "session_snapshots": "captured_at",
+    "agent_stats_snapshots": "captured_at",
+    "evidence_bundles": "captured_at",
+}
 
 
 def _writer_loop():
@@ -217,19 +224,20 @@ def _run_retention_sync(db_url: str):
         try:
             conn = await asyncpg.connect(db_url)
             try:
-                for table in _RETENTION_TABLES:
+                for table, timestamp_column in _RETENTION_TABLES.items():
                     try:
                         result = await conn.execute(
-                            f"DELETE FROM {table} WHERE captured_at < now() - interval '{_RETENTION_DAYS} days'"
+                            f"DELETE FROM {table} "
+                            f"WHERE {timestamp_column} < now() - interval '{_RETENTION_DAYS} days'"
                         )
                         if result and result != "DELETE 0":
                             logger.info("Retention cleanup %s: %s", table, result)
                     except Exception as e:
-                        logger.debug("Retention skip %s: %s", table, str(e)[:80])
+                        logger.warning("Retention cleanup failed for %s: %s", table, str(e)[:160])
             finally:
                 await conn.close()
         except Exception as e:
-            logger.debug("Retention connect failed: %s", str(e)[:100])
+            logger.warning("Retention connection failed: %s", str(e)[:160])
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(_do())
@@ -251,7 +259,7 @@ def _coerce_value(col: str, val):
             return val
     if col in ("first_seen", "last_seen", "created_at", "updated_at", "captured_at", "resolved_at"):
         if isinstance(val, str) and val:
-            from datetime import datetime, timezone
+            from datetime import datetime
             try:
                 return datetime.fromisoformat(val)
             except (ValueError, TypeError):
